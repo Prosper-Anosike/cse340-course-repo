@@ -1,0 +1,17 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">CSE 340 Service Network</p>
+  <h1>Upcoming Service Projects</h1>
+</section>
+<section class="projects-list content-width" aria-label="Featured service projects">
+  <article class="project-row">
+    <div class="project-number">01</div><div class="project-info"><h2>Park Cleanup</h2><p>Join us to clean up local parks and make them beautiful!</p></div>
+  </article>
+  <article class="project-row">
+    <div class="project-number">02</div><div class="project-info"><h2>Food Drive</h2><p>Help collect and distribute food to those in need.</p></div>
+  </article>
+  <article class="project-row">
+    <div class="project-number">03</div><div class="project-info"><h2>Community Tutoring</h2><p>Volunteer to tutor students in various subjects.</p></div>
+  </article>
+</section>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

@@ -1,0 +1,13 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">Start with what moves you</p>
+  <h1>Choose your <span>cause.</span></h1>
+  <p>There are many ways to strengthen a community. Explore a category and find the kind of good you want to do.</p>
+</section>
+<section class="category-list content-width" aria-label="Service categories">
+  <a class="category-row" href="/projects"><span class="category-number">01</span><h2>Environmental</h2><span class="category-action">View all projects <span aria-hidden="true">&rarr;</span></span></a>
+  <a class="category-row" href="/projects"><span class="category-number">02</span><h2>Educational</h2><span class="category-action">View all projects <span aria-hidden="true">&rarr;</span></span></a>
+  <a class="category-row" href="/projects"><span class="category-number">03</span><h2>Community Service</h2><span class="category-action">View all projects <span aria-hidden="true">&rarr;</span></span></a>
+  <a class="category-row" href="/projects"><span class="category-number">04</span><h2>Health and Wellness</h2><span class="category-action">View all projects <span aria-hidden="true">&rarr;</span></span></a>
+</section>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

@@ -1,0 +1,11 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">CSE 340 &middot; Service Network</p>
+    <h1>Welcome to the CSE 340 Service Network!</h1>
+    <p class="hero-intro">Our mission is to promote service across the world by connecting volunteers with service opportunities in their community.</p>
+    <a class="button button-light" href="/projects">Explore service projects <span aria-hidden="true">&rarr;</span></a>
+  </div>
+  <div class="hero-image"><img src="/images/cse340-service-network.png" alt="CSE 340 Service Network" width="340" height="131"></div>
+</section>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

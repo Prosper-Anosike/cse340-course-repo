@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#183c35">
+    <title><%= title %> | CSE 340 Service Network</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/main.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/" aria-label="CSE 340 Service Network home">
+          <span class="brand-mark" aria-hidden="true">340</span>
+          <span>CSE 340 Service Network</span>
+        </a>
+        <nav class="site-nav" aria-label="Main navigation">
+          <a href="/"<% if (currentPath === '/') { %> aria-current="page"<% } %>>Home</a>
+          <a href="/organizations"<% if (currentPath === '/organizations') { %> aria-current="page"<% } %>>Organizations</a>
+          <a href="/projects"<% if (currentPath === '/projects') { %> aria-current="page"<% } %>>Service Projects</a>
+          <a href="/categories"<% if (currentPath === '/categories') { %> aria-current="page"<% } %>>Categories</a>
+        </nav>
+      </div>
+    </header>
+    <main id="main-content">
