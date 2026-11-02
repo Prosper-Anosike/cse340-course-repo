@@ -61,6 +61,7 @@ test('organizations page displays the official partners, emails, and logos', asy
   ];
 
   assert.match(html, /Here are a few of our partner organizations:/);
+  assert.match(html, /<h1>Partner <span>Organizations<\/span><\/h1>/);
   for (const [name, email, image] of organizations) {
     assert.match(html, new RegExp(`<h2>${name}<\\/h2>`));
     assert.match(html, new RegExp(`<a href="mailto:${email}">${email}<\\/a>`));
@@ -90,6 +91,7 @@ test('categories page contains exactly the four required category labels', async
   const categories = ['Environmental', 'Educational', 'Community Service', 'Health and Wellness'];
   const categorySection = html.match(/<section class="category-list[^\"]*"[\s\S]*?<\/section>/)?.[0] ?? '';
 
+  assert.match(html, /<h1>Choose your <span>cause\.<\/span><\/h1>/);
   assert.deepEqual(categories.filter((category) => categorySection.includes(`<h2>${category}</h2>`)), categories);
   assert.equal((categorySection.match(/<h2>/g) ?? []).length, categories.length);
   assert.equal((categorySection.match(/href="\/projects"/g) ?? []).length, categories.length);
