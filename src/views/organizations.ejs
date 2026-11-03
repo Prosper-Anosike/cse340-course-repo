@@ -5,17 +5,15 @@
   <p>Here are a few of our partner organizations:</p>
 </section>
 <section class="organization-grid content-width" aria-label="Partner organizations">
+  <% organizations.forEach((organization) => { %>
   <article class="organization-card">
-    <img src="/images/brightfuture-logo.png" alt="BrightFuture Builders logo" width="100" height="100">
-    <div class="card-copy"><h2>BrightFuture Builders</h2><p>Email: <a href="mailto:info@brightfuture.org">info@brightfuture.org</a></p></div>
+    <img src="/images/<%= organization.logoFilename %>" alt="<%= organization.name %> logo" width="100" height="100">
+    <div class="card-copy">
+      <h2><%= organization.name %></h2>
+      <p><%= organization.description %></p>
+      <p>Email: <a href="mailto:<%= organization.contactEmail %>"><%= organization.contactEmail %></a></p>
+    </div>
   </article>
-  <article class="organization-card">
-    <img src="/images/greenharvest-logo.png" alt="GreenHarvest Growers logo" width="100" height="100">
-    <div class="card-copy"><h2>GreenHarvest Growers</h2><p>Email: <a href="mailto:contact@greenharvest.org">contact@greenharvest.org</a></p></div>
-  </article>
-  <article class="organization-card">
-    <img src="/images/unityserve-logo.png" alt="UnityServe Volunteers logo" width="100" height="100">
-    <div class="card-copy"><h2>UnityServe Volunteers</h2><p>Email: <a href="mailto:hello@unityserve.org">hello@unityserve.org</a></p></div>
-  </article>
+  <% }); %>
 </section>
 <%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

@@ -4,14 +4,15 @@
   <h1><%= heading %></h1>
 </section>
 <section class="projects-list content-width" aria-label="Featured service projects">
+  <% projects.forEach((project, index) => { %>
   <article class="project-row">
-    <div class="project-number">01</div><div class="project-info"><h2>Park Cleanup</h2><p>Join us to clean up local parks and make them beautiful!</p></div>
+    <div class="project-number"><%= String(index + 1).padStart(2, '0') %></div>
+    <div class="project-info">
+      <h2><%= project.title %></h2>
+      <p><%= project.description %></p>
+      <p class="project-meta"><%= project.organizationName %> &middot; <%= project.location %> &middot; <%= project.projectDate %></p>
+    </div>
   </article>
-  <article class="project-row">
-    <div class="project-number">02</div><div class="project-info"><h2>Food Drive</h2><p>Help collect and distribute food to those in need.</p></div>
-  </article>
-  <article class="project-row">
-    <div class="project-number">03</div><div class="project-info"><h2>Community Tutoring</h2><p>Volunteer to tutor students in various subjects.</p></div>
-  </article>
+  <% }); %>
 </section>
 <%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>
