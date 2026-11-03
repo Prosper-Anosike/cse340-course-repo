@@ -1,85 +1,178 @@
 # CSE 340 Service Network
 
-The CSE 340 Service Network is a dynamic web application developed for BYU-Idaho's CSE 340 Web Backend Development course. It connects service organizations, volunteer projects, and service categories.
+The CSE 340 Service Network is a web application I developed as part of BYU-Idaho's CSE 340 Web Backend Development course. The project focuses on connecting service organizations with volunteers by providing information about community projects and different areas of service.
 
-- Course: BYU-Idaho CSE 340 Web Backend Development
-- GitHub: [Prosper-Anosike/cse340-course-repo](https://github.com/Prosper-Anosike/cse340-course-repo)
-- Live website: [https://cse340-prosper.onrender.com/](https://cse340-prosper.onrender.com/)
+I started by building the website using Node.js, Express, and EJS. In Week 02, I expanded the application by integrating PostgreSQL, allowing organization details, service projects, and categories to be retrieved directly from a database instead of being hardcoded into the pages.
 
-The Week 01 site is live. As of 2026-11-03, live checks of the Week 02 pages confirmed 3 organizations, 15 projects, and 4 categories. The Render dashboard's deployed commit identity was not accessible, so compare it with the intended GitHub commit in Render's deployment events.
+The project will continue to develop as I learn and implement more backend development concepts throughout the course.
 
-## Technology Stack
+**Course:** BYU-Idaho — CSE 340 Web Backend Development
+**GitHub Repository:** [CSE 340 Course Repository](https://github.com/Prosper-Anosike/cse340-course-repo)
+**Live Website:** [CSE 340 Service Network](https://cse340-prosper.onrender.com/)
 
-- Node.js and Express.js
-- EJS templates and reusable partials
-- PostgreSQL with node-postgres (`pg`)
-- HTML5 and CSS3
-- Git and GitHub
-- Render
+## Technologies Used
 
-## Week 01 Features
+The application is built using the following technologies:
 
-- Express server and routes for Home, Organizations, Service Projects, and Categories.
-- Reusable EJS header and footer partials with dynamic page titles.
-- Responsive styling and official course images.
-- GitHub version control and Render hosting.
+* **Node.js:** Runs JavaScript on the server.
+* **Express.js:** Handles server routing, middleware, and HTTP requests.
+* **EJS:** Generates dynamic HTML pages using reusable templates and partials.
+* **PostgreSQL:** Stores information about organizations, projects, and service categories.
+* **node-postgres (`pg`):** Manages database connections and executes SQL queries.
+* **HTML5 and CSS3:** Provide the website's structure, styling, and responsive layout.
+* **Git and GitHub:** Manage source code and version history.
+* **Render:** Hosts the web application and PostgreSQL database.
+
+## Week 01 — Initial Site Creation
+
+In Week 01, I focused on setting up the application and building the foundation for the remaining coursework.
+
+I created an Express server and developed four main pages: Home, Organizations, Service Projects, and Categories. I also used EJS templates to make the pages easier to organize and maintain.
+
+### Features Implemented
+
+* Set up a Node.js application with Express.
+* Created routes for all four pages.
+* Used EJS templates and reusable header and footer partials.
+* Implemented dynamic page titles.
+* Added navigation between the main pages.
+* Organized CSS and image files within the `public` directory.
+* Designed a responsive layout for desktop and mobile devices.
+* Added the official course images and organization logos.
+* Connected the GitHub repository to Render for deployment.
+
+By the end of Week 01, the website was running locally and had been successfully deployed to Render.
 
 ## Week 02 — Database Retrieval
 
-- PostgreSQL connection pooling with environment-based configuration.
-- Database models for organizations, projects, and categories.
-- Dynamic organization names, descriptions, contact details, and logos.
-- Dynamic service projects with their dates, locations, and sponsoring organizations.
-- Dynamic service categories.
-- SQL joins and database-driven EJS rendering.
-- Credential-safe error handling and automated application tests.
+In Week 02, I focused on connecting the application to PostgreSQL and displaying information retrieved from the database.
 
-Organizations, projects, and categories are retrieved from PostgreSQL rather than hardcoded in the page templates.
+Previously, the website displayed organization and project information directly from the EJS templates. With the database integration, the application now retrieves those records through SQL queries and passes the results to the appropriate pages.
+
+This makes the website easier to maintain and allows the information to change without manually editing the page templates.
+
+### Features Implemented
+
+* Created and configured a PostgreSQL database on Render.
+* Connected the database to the Node.js application using `pg`.
+* Implemented database connection pooling.
+* Used environment variables to manage database configuration securely.
+* Created database models for organizations, projects, and categories.
+* Retrieved organization names, descriptions, contact emails, and logos.
+* Retrieved service projects with their descriptions, dates, locations, and sponsoring organizations.
+* Retrieved service categories dynamically.
+* Used SQL joins to retrieve related information from multiple tables.
+* Updated the EJS templates to display database records.
+* Added automated tests and database error handling.
+* Verified the application using a real PostgreSQL connection.
+
+### Database Records
+
+The database currently contains:
+
+| Data                          | Total |
+| ----------------------------- | ----: |
+| Organizations                 |     3 |
+| Service Projects              |    15 |
+| Categories                    |     4 |
+| Project-Category Associations |    25 |
+
+Each organization has five service projects, and every project is associated with at least one category.
 
 ## Database Structure
 
-The database contains four tables:
+The PostgreSQL database contains four tables that work together to organize the application's information.
 
-- `organization`
-- `project`
-- `category`
-- `project_category`
+| Table              | Description                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------ |
+| `organization`     | Stores organization names, descriptions, contact emails, and logo filenames.                           |
+| `project`          | Stores service projects, including their descriptions, locations, dates, and sponsoring organizations. |
+| `category`         | Stores the different service categories.                                                               |
+| `project_category` | Connects projects to their categories.                                                                 |
 
-One organization can sponsor many projects; each project belongs to one organization. Projects and categories have a many-to-many relationship implemented by `project_category`.
+### Database Relationships
 
-The sample dataset contains 3 organizations, 15 service projects, 4 categories, and 25 project-category associations. The schema and seed data are in [`src/setup.sql`](src/setup.sql).
+The database uses two main relationships:
+
+**One-to-Many:** An organization can sponsor several service projects, but each project belongs to one organization.
+
+**Many-to-Many:** A service project can belong to multiple categories, and each category can contain multiple projects. The `project_category` table manages this relationship.
+
+Primary and foreign keys are used to maintain these relationships and protect the consistency of the data.
+
+The complete database schema and sample records are stored in [`src/setup.sql`](src/setup.sql).
 
 ## Database Models
 
-- [`src/models/db.js`](src/models/db.js): PostgreSQL pool, TLS configuration, and `testConnection()`.
-- [`src/models/organizations.js`](src/models/organizations.js): `getAllOrganizations()` retrieves organization records.
-- [`src/models/projects.js`](src/models/projects.js): `getAllProjects()` retrieves projects joined with sponsoring organization names.
-- [`src/models/categories.js`](src/models/categories.js): `getAllCategories()` retrieves category records.
+To keep the application organized, I separated the database operations into individual model files.
 
-## Local Setup
+| File                                                         | Purpose                                                                                   |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| [`src/models/db.js`](src/models/db.js)                       | Manages PostgreSQL connections, connection pooling, TLS settings, and connection testing. |
+| [`src/models/organizations.js`](src/models/organizations.js) | Retrieves organization records using `getAllOrganizations()`.                             |
+| [`src/models/projects.js`](src/models/projects.js)           | Retrieves projects and their sponsoring organizations using `getAllProjects()`.           |
+| [`src/models/categories.js`](src/models/categories.js)       | Retrieves service categories using `getAllCategories()`.                                  |
 
-Install dependencies and start the development server:
+Each model handles the database queries related to its purpose. The Express routes call these functions and pass the results to the EJS templates for rendering.
+
+## Getting Started
+
+To run the application locally, you will need Node.js, npm, and access to a PostgreSQL database.
+
+### 1. Clone the Repository
+
+Open a terminal and run:
+
+```powershell
+git clone https://github.com/Prosper-Anosike/cse340-course-repo.git
+cd cse340-course-repo
+```
+
+### 2. Install Dependencies
+
+Install the required packages:
 
 ```powershell
 npm install
+```
+
+### 3. Configure the Environment
+
+Create a `.env` file in the root directory of the project.
+
+Add the required environment variables using the instructions in the next section.
+
+### 4. Start the Application
+
+Run the development server:
+
+```powershell
 npm run dev
 ```
 
-Open `http://localhost:3000`. For production-style startup, run:
+Open the website in your browser:
+
+http://localhost:3000
+
+To run the application using the production startup command:
 
 ```powershell
 npm start
 ```
 
-The server uses the `PORT` environment variable when provided and otherwise listens on port `3000`.
+The application uses the `PORT` environment variable when one is provided. Otherwise, it runs on port `3000`.
 
 ## Environment Configuration
 
-Create a local `.env` file. Replace the placeholder URL with the appropriate connection URL; never commit credentials. `.env` and `.env.*` are excluded from Git.
+Database credentials and environment-specific settings are managed through environment variables.
+
+The `.env` file is excluded from Git, so private connection details are not included in the public repository.
 
 ### Local Development
 
-Use the PostgreSQL **External Database URL** and keep the internal self-signed TLS option unset or `false`:
+For local development, use the PostgreSQL **External Database URL**.
+
+Create a `.env` file containing:
 
 ```dotenv
 DB_URL=YOUR_EXTERNAL_POSTGRES_URL
@@ -87,11 +180,15 @@ NODE_ENV=development
 ENABLE_SQL_LOGGING=false
 ```
 
-`ENABLE_SQL_LOGGING` is optional. When enabled, it logs SQL statements, not connection credentials or parameter values.
+Replace `YOUR_EXTERNAL_POSTGRES_URL` with the connection URL provided by your PostgreSQL database service.
+
+The `DB_SSL_ALLOW_SELF_SIGNED_INTERNAL` setting should remain unset or `false` when connecting through the external database URL.
+
+`ENABLE_SQL_LOGGING` is optional. When enabled, it logs SQL statements to assist with debugging without displaying database credentials or query parameter values.
 
 ### Render Production
 
-Set these variables in the Render service environment, using the PostgreSQL **Internal Database URL** for a database in the same Render region:
+For the deployed application, configure the following environment variables in the Render dashboard:
 
 ```dotenv
 DB_URL=YOUR_INTERNAL_RENDER_POSTGRES_URL
@@ -100,35 +197,113 @@ DB_SSL_ALLOW_SELF_SIGNED_INTERNAL=true
 ENABLE_SQL_LOGGING=false
 ```
 
-The self-signed TLS option is accepted only in production with a recognized Render internal PostgreSQL hostname. External connections retain strict certificate verification. Render supplies `PORT` to the web service.
+The `DB_URL` value should contain the PostgreSQL **Internal Database URL** provided by Render.
+
+The application uses TLS for database connections. Its configuration permits self-signed certificates only when the internal Render PostgreSQL connection is recognized and the production setting is explicitly enabled. External connections continue to use strict certificate verification.
+
+Render automatically provides the `PORT` environment variable.
+
+**Security Note:** Database passwords, private connection URLs, and other credentials should never be committed to GitHub or included in application logs.
 
 ## Database Setup
 
-`src/setup.sql` creates the tables and inserts the initial sample data. To initialize a newly created, empty course database, connect to it in pgAdmin, open its Query Tool, load `src/setup.sql`, and execute the script. The script uses conflict handling and contains no `DROP` statements, but review its effects before running it against any database that already contains data. Do not rerun it against production without first assessing the changes it would make.
+The SQL script in [`src/setup.sql`](src/setup.sql) contains the statements needed to create the database tables and insert the initial sample data.
 
-Render Free PostgreSQL databases have a limited lifetime. Keep the setup script available so the schema and sample data can be recreated when needed.
+To set up a new database:
+
+1. Create a PostgreSQL database on Render or another compatible PostgreSQL service.
+2. Open pgAdmin and connect to the database using its connection details.
+3. Select the database and open the Query Tool.
+4. Open `src/setup.sql` and load its SQL statements into the Query Tool.
+5. Execute the script to create the tables and insert the sample records.
+6. Refresh the Tables folder and confirm that all four tables have been created.
+7. Verify that the organization, project, category, and relationship records were inserted correctly.
+
+The setup script uses conflict handling to support repeated execution and does not contain destructive `DROP TABLE` statements. However, it should still be reviewed before running it against a database that already contains information.
+
+Render's Free PostgreSQL plan has a limited database lifetime. Keeping the SQL setup script in the repository makes it easier to recreate the database structure and sample records when necessary.
 
 ## Testing
 
-Run the automated suite with:
+I added automated tests to check the application's functionality and help identify problems before deployment.
+
+To run the tests:
 
 ```powershell
 npm test
 ```
 
-The tests cover routes, database-backed rendering with mocked query results, SQL schema expectations, TLS configuration, and safe database error handling. The latest local result was **16 tests passed, 0 failed**. Separately, the application was tested locally against PostgreSQL; the automated mock suite does not itself verify the latest Render deployment.
+The automated tests cover:
 
-## Render Deployment
+* Express routes and HTTP responses.
+* EJS rendering and database-backed page content using mocked query results.
+* Database schema expectations.
+* Database connection and TLS configuration behavior.
+* Error handling when database operations fail.
 
-Current service configuration:
+**Latest automated test results (November 3, 2026):**
 
-- Runtime: Node
-- Branch: `main`
-- Root directory: empty
-- Build command: `npm install`
-- Start command: `npm start`
-- Instance type: Free
-- `NODE_ENV`: `production`
-- Auto Deploy: On Commit
+* 16 tests passed.
+* 0 tests failed.
+* 0 dependency vulnerabilities reported by `npm audit`.
 
-The live website is [https://cse340-prosper.onrender.com/](https://cse340-prosper.onrender.com/). After each deployment, verify that Render shows the intended commit as live and that the service displays its database-backed organizations, all 15 projects, and four categories.
+In addition to the automated tests, I tested the application locally using an actual PostgreSQL database connection.
+
+The database checks confirmed that all required records and relationships were present and that the application could retrieve and display them correctly.
+
+## Deployment on Render
+
+The application is hosted on Render and connected to the GitHub repository.
+
+### Web Service Configuration
+
+| Setting        | Configuration |
+| -------------- | ------------- |
+| Runtime        | Node          |
+| Branch         | `main`        |
+| Root Directory | Empty         |
+| Build Command  | `npm install` |
+| Start Command  | `npm start`   |
+| Instance Type  | Free          |
+| Environment    | Production    |
+| Auto Deploy    | On Commit     |
+
+The PostgreSQL database is also hosted on Render, allowing the application to retrieve the information needed for its pages.
+
+### Live Website
+
+The application is available at:
+
+**https://cse340-prosper.onrender.com/**
+
+The website has four main pages:
+
+| Page             | Link                                                                    |
+| ---------------- | ----------------------------------------------------------------------- |
+| Home             | [View Home](https://cse340-prosper.onrender.com/)                       |
+| Organizations    | [View Organizations](https://cse340-prosper.onrender.com/organizations) |
+| Service Projects | [View Projects](https://cse340-prosper.onrender.com/projects)           |
+| Categories       | [View Categories](https://cse340-prosper.onrender.com/categories)       |
+
+### Live Website Verification
+
+On November 3, 2026, I reviewed the deployed website in my browser and confirmed that the main pages displayed the expected Week 02 content.
+
+The Organizations page displayed all three organizations with their descriptions, contact emails, and logos. The Service Projects page displayed all 15 projects, including their descriptions, dates, locations, and sponsoring organizations. The Categories page also displayed all four service categories.
+
+The pages maintained consistent styling and navigation, and the application displayed the expected information from the database integration.
+
+For future deployments, I will continue checking Render's deployment status and confirming that the intended GitHub commit is live.
+
+## Project Progress
+
+This repository contains my coursework and ongoing development for CSE 340.
+
+* **Week 01:** Initial website creation, Express routing, EJS templates, responsive styling, and deployment.
+* **Week 02:** PostgreSQL database integration, relational database design, dynamic data retrieval, and database-driven EJS rendering.
+
+Future coursework will build on this foundation by introducing additional backend functionality, including the Model-View-Controller (MVC) pattern, database updates, validation, and authentication.
+
+---
+
+Developed as part of **BYU-Idaho's CSE 340 Web Backend Development course**.
