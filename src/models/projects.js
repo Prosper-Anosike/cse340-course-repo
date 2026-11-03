@@ -1,13 +1,13 @@
 import { database } from './db.js';
 
-export async function getAllProjects() {
+const getAllProjects = async () => {
   const result = await database.query(`
     SELECT project.project_id AS "projectId",
            project.organization_id AS "organizationId",
            project.title,
            project.description,
            project.location,
-           TO_CHAR(project.project_date, 'YYYY-MM-DD') AS "projectDate",
+           TO_CHAR(project.project_date, 'FMMonth FMDD, YYYY') AS "projectDate",
            organization.name AS "organizationName"
     FROM project
     INNER JOIN organization
@@ -16,4 +16,6 @@ export async function getAllProjects() {
   `);
 
   return result.rows;
-}
+};
+
+export { getAllProjects };

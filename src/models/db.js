@@ -12,7 +12,7 @@ export const safeDatabaseErrorCode = (error) => {
   return /^[a-z0-9_]{1,40}$/i.test(errorCode) ? errorCode : 'unknown';
 };
 
-export function createPoolConfig(environment = process.env) {
+const createPoolConfig = (environment = process.env) => {
   const connectionString = environment.DB_URL?.trim();
 
   if (!connectionString) {
@@ -72,7 +72,9 @@ export function createPoolConfig(environment = process.env) {
     connectionTimeoutMillis: 5_000,
     ssl: { rejectUnauthorized: !allowSelfSignedInternal },
   };
-}
+};
+
+export { createPoolConfig };
 
 const getPool = () => {
   if (!pool) {
@@ -86,7 +88,7 @@ const getPool = () => {
 };
 
 export const database = {
-  async query(statement, values = []) {
+  query: async (statement, values = []) => {
     if (/^(true|1)$/i.test(process.env.ENABLE_SQL_LOGGING ?? '')) {
       console.info(`[db] ${statement.trim().replace(/\s+/g, ' ')}`);
     }
@@ -95,7 +97,9 @@ export const database = {
   },
 };
 
-export async function testConnection() {
+const testConnection = async () => {
   const result = await getPool().query('SELECT 1');
   return result.rowCount === 1;
-}
+};
+
+export { testConnection };

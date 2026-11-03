@@ -44,7 +44,7 @@ const projects = [
     title: 'Park Cleanup',
     description: 'Join us to clean up local parks and make them beautiful!',
     location: 'Riverside Park',
-    projectDate: '2026-12-07',
+    projectDate: 'December 7, 2026',
     organizationName: 'UnityServe Volunteers',
   },
   {
@@ -53,7 +53,7 @@ const projects = [
     title: 'Food Drive',
     description: 'Help collect and distribute food to those in need.',
     location: 'Central Community Pantry',
-    projectDate: '2026-12-14',
+    projectDate: 'December 14, 2026',
     organizationName: 'UnityServe Volunteers',
   },
   {
@@ -62,7 +62,7 @@ const projects = [
     title: 'Community Tutoring',
     description: 'Volunteer to tutor students in various subjects.',
     location: 'Civic Learning Center',
-    projectDate: '2027-01-11',
+    projectDate: 'January 11, 2027',
     organizationName: 'UnityServe Volunteers',
   },
 ];
@@ -205,6 +205,7 @@ test('database models select required columns and join projects to organizations
   assert.match(statements[0], /contact_email AS "contactEmail"/);
   assert.match(statements[1], /INNER JOIN organization/);
   assert.match(statements[1], /organization\.name AS "organizationName"/);
+  assert.match(statements[1], /TO_CHAR\(project\.project_date, 'FMMonth FMDD, YYYY'\) AS "projectDate"/);
   assert.match(statements[2], /SELECT category_id AS "categoryId"/);
 });
 

@@ -1,6 +1,6 @@
 import { database } from './db.js';
 
-export async function getAllOrganizations() {
+const getAllOrganizations = async () => {
   const result = await database.query(`
     SELECT organization_id AS "organizationId",
            name,
@@ -12,4 +12,6 @@ export async function getAllOrganizations() {
   `);
 
   return result.rows;
-}
+};
+
+export { getAllOrganizations };
