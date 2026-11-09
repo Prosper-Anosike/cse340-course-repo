@@ -1,0 +1,24 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">Service Category</p>
+  <h1><%= category.name %></h1>
+  <p>Explore service projects connected to this category.</p>
+</section>
+<section class="projects-list content-width" aria-label="Projects in this category">
+  <h2>Service projects</h2>
+  <% if (projects.length > 0) { %>
+    <% projects.forEach((project, index) => { %>
+  <article class="project-row">
+    <div class="project-number"><%= String(index + 1).padStart(2, '0') %></div>
+    <div class="project-info">
+      <h3><a href="/project/<%= project.projectId %>"><%= project.title %></a></h3>
+      <p><%= project.description %></p>
+      <p class="project-meta"><%= project.location %> &middot; <%= project.projectDate %></p>
+    </div>
+  </article>
+    <% }); %>
+  <% } else { %>
+  <p>No service projects are currently associated with this category.</p>
+  <% } %>
+</section>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

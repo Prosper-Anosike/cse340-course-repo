@@ -14,4 +14,18 @@ const getAllOrganizations = async () => {
   return result.rows;
 };
 
-export { getAllOrganizations };
+const getOrganizationDetails = async (organizationId) => {
+  const result = await database.query(`
+    SELECT organization_id AS "organizationId",
+           name,
+           description,
+           contact_email AS "contactEmail",
+           logo_filename AS "logoFilename"
+    FROM organization
+    WHERE organization_id = $1;
+  `, [organizationId]);
+
+  return result.rows[0] ?? null;
+};
+
+export { getAllOrganizations, getOrganizationDetails };

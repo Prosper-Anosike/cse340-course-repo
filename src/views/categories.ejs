@@ -6,10 +6,10 @@
 </section>
 <section class="category-list content-width" aria-label="Service categories">
   <% categories.forEach((category, index) => { %>
-  <a class="category-row" href="/projects">
+  <a class="category-row" href="/category/<%= category.categoryId %>">
     <span class="category-number"><%= String(index + 1).padStart(2, '0') %></span>
     <h2><%= category.name %></h2>
-    <span class="category-action">View all projects <span aria-hidden="true">&rarr;</span></span>
+    <span class="category-action">View category projects <span aria-hidden="true">&rarr;</span></span>
   </a>
   <% }); %>
 </section>

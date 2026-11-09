@@ -8,11 +8,14 @@
   <article class="project-row">
     <div class="project-number"><%= String(index + 1).padStart(2, '0') %></div>
     <div class="project-info">
-      <h2><%= project.title %></h2>
+      <h2><a href="/project/<%= project.projectId %>"><%= project.title %></a></h2>
       <p><%= project.description %></p>
-      <p class="project-meta"><%= project.organizationName %> &middot; <%= project.location %> &middot; <%= project.projectDate %></p>
+      <p class="project-meta"><a href="/organization/<%= project.organizationId %>"><%= project.organizationName %></a> &middot; <%= project.location %> &middot; <%= project.projectDate %></p>
     </div>
   </article>
   <% }); %>
+  <% if (projects.length === 0) { %>
+  <p>No upcoming service projects are currently scheduled.</p>
+  <% } %>
 </section>
 <%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

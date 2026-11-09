@@ -1,55 +1,46 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getAllCategories } from './models/categories.js';
-import { getAllOrganizations } from './models/organizations.js';
-import { getAllProjects } from './models/projects.js';
-import { safeDatabaseErrorCode } from './models/db.js';
+import router from './routes.js';
 
 const app = express();
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
-const databaseUnavailableMessage = 'Service data is temporarily unavailable.';
-
-const renderDatabasePage = (view, collectionName, getRecords, pageLocals) => async (_request, response) => {
-  try {
-    const records = await getRecords();
-    response.render(view, { ...pageLocals, [collectionName]: records });
-  } catch (error) {
-    console.error(`Unable to load ${view} data (${safeDatabaseErrorCode(error)}). Verify DB_URL and database availability.`);
-    response.status(503).send(databaseUnavailableMessage);
-  }
-};
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(currentDirectory, 'views'));
-app.use(express.static(path.join(currentDirectory, '..', 'public')));
+app.use((request, response, next) => {
+  if (process.env.NODE_ENV === 'development') {
+    console.info(`${request.method} ${request.originalUrl}`);
+  }
 
-app.get('/', (_request, response) => {
-  response.render('home', {
-    title: 'Home',
-    heading: 'Welcome to the CSE 340 Service Network!',
-    currentPath: '/',
+  response.locals.NODE_ENV = process.env.NODE_ENV;
+  next();
+});
+app.use(express.static(path.join(currentDirectory, '..', 'public')));
+app.use(router);
+
+app.use((request, response) => {
+  response.status(404).render('errors/404', {
+    title: 'Page Not Found',
+    currentPath: request.path,
   });
 });
 
-app.get('/organizations', renderDatabasePage('organizations', 'organizations', getAllOrganizations, {
-    title: 'Organizations',
-    headingStart: 'Partner',
-    headingEmphasis: 'Organizations',
-    currentPath: '/organizations',
-}));
+app.use((error, _request, response, next) => {
+  if (response.headersSent) {
+    return next(error);
+  }
 
-app.get('/projects', renderDatabasePage('projects', 'projects', getAllProjects, {
-    title: 'Service Projects',
-    heading: 'Upcoming Service Projects',
-    currentPath: '/projects',
-}));
+  console.error('Unhandled request error:', error);
+  const errorDetails = process.env.NODE_ENV === 'development'
+    ? error.stack ?? error.message
+    : '';
 
-app.get('/categories', renderDatabasePage('categories', 'categories', getAllCategories, {
-    title: 'Categories',
-    headingStart: 'Choose your',
-    headingEmphasis: 'cause.',
-    currentPath: '/categories',
-}));
+  response.status(500).render('errors/500', {
+    title: 'Server Error',
+    currentPath: '',
+    errorDetails,
+  });
+});
 
 export default app;

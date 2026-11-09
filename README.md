@@ -79,6 +79,16 @@ The database currently contains:
 
 Each organization has five service projects, and every project is associated with at least one category.
 
+## Week 03 — MVC, Middleware, and Detail Pages
+
+In Week 03, I organized request handling with the Model-View-Controller (MVC) pattern. Express routes are registered in `src/routes.js`, controllers coordinate models and EJS views, and SQL remains in the model files.
+
+The application logs HTTP requests in development, shares `NODE_ENV` with EJS, and uses custom 404 and 500 pages. Detailed errors are shown only in development; production responses use generic messages.
+
+The Organizations, Service Projects, and Categories pages now link to database-backed detail pages. Project details link to their sponsoring organization and show linked category tags. The Service Projects page displays up to five projects scheduled for today or later, ordered by date.
+
+The Week 03 implementation has been verified locally.
+
 ## Database Structure
 
 The PostgreSQL database contains four tables that work together to organize the application's information.
@@ -109,11 +119,11 @@ To keep the application organized, I separated the database operations into indi
 | File                                                         | Purpose                                                                                   |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | [`src/models/db.js`](src/models/db.js)                       | Manages PostgreSQL connections, connection pooling, TLS settings, and connection testing. |
-| [`src/models/organizations.js`](src/models/organizations.js) | Retrieves organization records using `getAllOrganizations()`.                             |
-| [`src/models/projects.js`](src/models/projects.js)           | Retrieves projects and their sponsoring organizations using `getAllProjects()`.           |
-| [`src/models/categories.js`](src/models/categories.js)       | Retrieves service categories using `getAllCategories()`.                                  |
+| [`src/models/organizations.js`](src/models/organizations.js) | Retrieves organization lists and details.                                                  |
+| [`src/models/projects.js`](src/models/projects.js)           | Retrieves upcoming projects, project details, and projects by organization or category.    |
+| [`src/models/categories.js`](src/models/categories.js)       | Retrieves category lists and details, and categories associated with projects.              |
 
-Each model handles the database queries related to its purpose. The Express routes call these functions and pass the results to the EJS templates for rendering.
+Each model handles the database queries related to its purpose. Controllers call model functions and pass their results to EJS templates for rendering.
 
 ## Getting Started
 
@@ -236,14 +246,14 @@ npm test
 The automated tests cover:
 
 * Express routes and HTTP responses.
-* EJS rendering and database-backed page content using mocked query results.
+* EJS rendering, detail routes, category tags, and database-backed page content using mocked query results.
 * Database schema expectations.
 * Database connection and TLS configuration behavior.
 * Error handling when database operations fail.
 
-**Latest automated test results (November 3, 2026):**
+**Latest automated test results (November 9, 2026):**
 
-* 16 tests passed.
+* 23 tests passed.
 * 0 tests failed.
 * 0 dependency vulnerabilities reported by `npm audit`.
 
@@ -301,8 +311,9 @@ This repository contains my coursework and ongoing development for CSE 340.
 
 * **Week 01:** Initial website creation, Express routing, EJS templates, responsive styling, and deployment.
 * **Week 02:** PostgreSQL database integration, relational database design, dynamic data retrieval, and database-driven EJS rendering.
+* **Week 03:** MVC structure, development middleware, custom error pages, upcoming projects, organization/project/category details, and project-category navigation.
 
-Future coursework will build on this foundation by introducing additional backend functionality, including the Model-View-Controller (MVC) pattern, database updates, validation, and authentication.
+Future coursework will build on this foundation with database updates, validation, authentication, and additional backend functionality.
 
 ---
 

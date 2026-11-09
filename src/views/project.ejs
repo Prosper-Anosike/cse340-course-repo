@@ -1,0 +1,21 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">Service Project</p>
+  <h1><%= project.title %></h1>
+  <p><%= project.description %></p>
+  <p class="project-meta"><%= project.location %> &middot; <%= project.projectDate %></p>
+  <p>Organized by <a href="/organization/<%= project.organizationId %>"><%= project.organizationName %></a></p>
+</section>
+<section class="project-categories content-width" aria-labelledby="project-categories-heading">
+  <h2 id="project-categories-heading">Categories</h2>
+  <% if (categories.length > 0) { %>
+  <ul class="category-tags" aria-label="Project categories">
+    <% categories.forEach((category) => { %>
+    <li><a class="category-tag" href="/category/<%= category.categoryId %>"><%= category.name %></a></li>
+    <% }); %>
+  </ul>
+  <% } else { %>
+  <p>No categories are assigned to this project.</p>
+  <% } %>
+</section>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

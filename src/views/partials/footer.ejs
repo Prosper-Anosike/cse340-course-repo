@@ -6,7 +6,7 @@
           <span>CSE 340 Service Network</span>
         </a>
         <p>Promoting service across the world.</p>
-        <p class="copyright">&copy; <%= currentYear %> CSE 340 Service Network</p>
+        <p class="copyright">&copy; <%= new Date().getFullYear() %> CSE 340 Service Network<% if (NODE_ENV === 'development') { %> (Development mode)<% } %></p>
       </div>
     </footer>
   </body>

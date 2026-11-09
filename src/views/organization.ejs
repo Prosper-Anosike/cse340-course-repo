@@ -1,0 +1,26 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">Partner Organization</p>
+  <h1><%= organization.name %></h1>
+  <img src="/images/<%= organization.logoFilename %>" alt="<%= organization.name %> logo" width="180" height="180">
+  <p><%= organization.description %></p>
+  <p>Contact: <a href="mailto:<%= organization.contactEmail %>"><%= organization.contactEmail %></a></p>
+</section>
+<section class="projects-list content-width" aria-label="Organization service projects">
+  <h2>Service projects</h2>
+  <% if (projects.length > 0) { %>
+    <% projects.forEach((project, index) => { %>
+  <article class="project-row">
+    <div class="project-number"><%= String(index + 1).padStart(2, '0') %></div>
+    <div class="project-info">
+      <h3><a href="/project/<%= project.projectId %>"><%= project.title %></a></h3>
+      <p><%= project.description %></p>
+      <p class="project-meta"><%= project.location %> &middot; <%= project.projectDate %></p>
+    </div>
+  </article>
+    <% }); %>
+  <% } else { %>
+  <p>This organization has no service projects yet.</p>
+  <% } %>
+</section>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>
