@@ -27,3 +27,13 @@
       </div>
     </header>
     <main id="main-content">
+      <% if (flash?.success?.length || flash?.error?.length) { %>
+      <section class="flash-messages content-width" aria-label="Notifications">
+        <% (flash.success ?? []).forEach((message) => { %>
+        <p class="flash-message flash-success" role="status"><%= message %></p>
+        <% }); %>
+        <% (flash.error ?? []).forEach((message) => { %>
+        <p class="flash-message flash-error" role="alert"><%= message %></p>
+        <% }); %>
+      </section>
+      <% } %>

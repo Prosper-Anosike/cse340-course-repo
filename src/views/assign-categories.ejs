@@ -1,0 +1,18 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">Service Project</p>
+  <h1>Categories for <span><%= project.title %></span></h1>
+</section>
+<form class="organization-form content-width" action="/assign-categories/<%= project.projectId %>" method="post">
+  <fieldset class="category-checkboxes">
+    <legend>Project categories</legend>
+    <% categories.forEach((category) => { %>
+    <label class="category-checkbox">
+      <input type="checkbox" name="categoryIds" value="<%= category.categoryId %>"<% if (assignedCategoryIds.includes(category.categoryId)) { %> checked<% } %>>
+      <span><%= category.name %></span>
+    </label>
+    <% }); %>
+  </fieldset>
+  <button class="button button-light" type="submit">Update Categories</button>
+</form>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

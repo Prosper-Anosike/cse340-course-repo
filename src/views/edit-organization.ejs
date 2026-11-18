@@ -1,0 +1,25 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">Partner Organization</p>
+  <h1>Edit <span>organization.</span></h1>
+</section>
+<form class="organization-form content-width" action="/edit-organization/<%= organization.organizationId %>" method="post">
+  <div class="form-field">
+    <label for="name">Organization name</label>
+    <input id="name" name="name" type="text" required maxlength="150" value="<%= organization.name %>" autocomplete="organization">
+  </div>
+  <div class="form-field">
+    <label for="description">Description</label>
+    <textarea id="description" name="description" required maxlength="500" rows="5"><%= organization.description %></textarea>
+  </div>
+  <div class="form-field">
+    <label for="contactEmail">Contact email</label>
+    <input id="contactEmail" name="contactEmail" type="email" required maxlength="255" value="<%= organization.contactEmail %>" autocomplete="email">
+  </div>
+  <div class="form-field">
+    <label for="logoFilename">Logo filename</label>
+    <input id="logoFilename" name="logoFilename" type="text" required maxlength="255" value="<%= organization.logoFilename %>">
+  </div>
+  <button class="button button-light" type="submit">Save changes</button>
+</form>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

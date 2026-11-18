@@ -28,4 +28,28 @@ const getOrganizationDetails = async (organizationId) => {
   return result.rows[0] ?? null;
 };
 
-export { getAllOrganizations, getOrganizationDetails };
+const createOrganization = async (name, description, contactEmail, logoFilename) => {
+  const result = await database.query(`
+    INSERT INTO organization (name, description, contact_email, logo_filename)
+    VALUES ($1, $2, $3, $4)
+    RETURNING organization_id AS "organizationId";
+  `, [name, description, contactEmail, logoFilename]);
+
+  return result.rows[0]?.organizationId ?? null;
+};
+
+const updateOrganization = async (organizationId, name, description, contactEmail, logoFilename) => {
+  const result = await database.query(`
+    UPDATE organization
+    SET name = $2,
+        description = $3,
+        contact_email = $4,
+        logo_filename = $5
+    WHERE organization_id = $1
+    RETURNING organization_id AS "organizationId";
+  `, [organizationId, name, description, contactEmail, logoFilename]);
+
+  return result.rows[0]?.organizationId ?? null;
+};
+
+export { createOrganization, getAllOrganizations, getOrganizationDetails, updateOrganization };

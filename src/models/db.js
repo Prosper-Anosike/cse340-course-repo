@@ -87,14 +87,45 @@ const getPool = () => {
   return pool;
 };
 
-export const database = {
-  query: async (statement, values = []) => {
-    if (/^(true|1)$/i.test(process.env.ENABLE_SQL_LOGGING ?? '')) {
-      console.info(`[db] ${statement.trim().replace(/\s+/g, ' ')}`);
+const logDatabaseQuery = (statement) => {
+  if (/^(true|1)$/i.test(process.env.ENABLE_SQL_LOGGING ?? '')) {
+    console.info(`[db] ${statement.trim().replace(/\s+/g, ' ')}`);
+  }
+};
+
+const createTransactionRunner = (acquireClient) => async (operation) => {
+  const client = await acquireClient();
+
+  try {
+    await client.query('BEGIN');
+    const transaction = {
+      query: async (statement, values = []) => {
+        logDatabaseQuery(statement);
+        return client.query(statement, values);
+      },
+    };
+    const result = await operation(transaction);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error(`PostgreSQL rollback failed (${safeDatabaseErrorCode(rollbackError)}).`);
     }
 
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+export const database = {
+  query: async (statement, values = []) => {
+    logDatabaseQuery(statement);
     return getPool().query(statement, values);
   },
+  transaction: createTransactionRunner(() => getPool().connect()),
 };
 
 const testConnection = async () => {
@@ -102,4 +133,4 @@ const testConnection = async () => {
   return result.rowCount === 1;
 };
 
-export { testConnection };
+export { createTransactionRunner, testConnection };

@@ -1,0 +1,21 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">CSE 340 Service Network</p>
+  <h1>Add an <span>organization.</span></h1>
+</section>
+<form class="organization-form content-width" action="/new-organization" method="post">
+  <div class="form-field">
+    <label for="name">Organization name</label>
+    <input id="name" name="name" type="text" required maxlength="150" autocomplete="organization">
+  </div>
+  <div class="form-field">
+    <label for="description">Description</label>
+    <textarea id="description" name="description" required maxlength="500" rows="5"></textarea>
+  </div>
+  <div class="form-field">
+    <label for="contactEmail">Contact email</label>
+    <input id="contactEmail" name="contactEmail" type="email" required maxlength="255" autocomplete="email">
+  </div>
+  <button class="button button-light" type="submit">Create organization</button>
+</form>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

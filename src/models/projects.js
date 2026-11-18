@@ -65,6 +65,7 @@ const getProjectDetails = async (projectId) => {
            project.description,
            project.location,
            TO_CHAR(project.project_date, 'FMMonth FMDD, YYYY') AS "projectDate",
+           TO_CHAR(project.project_date, 'YYYY-MM-DD') AS "projectDateISO",
            organization.name AS "organizationName"
     FROM project
     INNER JOIN organization
@@ -96,4 +97,29 @@ const getProjectsByCategoryId = async (categoryId) => {
   return result.rows;
 };
 
-export { getAllProjects, getProjectDetails, getProjectsByCategoryId, getProjectsByOrganizationId, getUpcomingProjects };
+const createProject = async (title, description, location, date, organizationId) => {
+  const result = await database.query(`
+    INSERT INTO project (title, description, location, project_date, organization_id)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING project_id AS "projectId";
+  `, [title, description, location, date, organizationId]);
+
+  return result.rows[0]?.projectId ?? null;
+};
+
+const updateProject = async (projectId, title, description, location, date, organizationId) => {
+  const result = await database.query(`
+    UPDATE project
+    SET title = $2,
+        description = $3,
+        location = $4,
+        project_date = $5,
+        organization_id = $6
+    WHERE project_id = $1
+    RETURNING project_id AS "projectId";
+  `, [projectId, title, description, location, date, organizationId]);
+
+  return result.rows[0]?.projectId ?? null;
+};
+
+export { createProject, getAllProjects, getProjectDetails, getProjectsByCategoryId, getProjectsByOrganizationId, getUpcomingProjects, updateProject };

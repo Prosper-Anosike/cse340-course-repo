@@ -1,0 +1,13 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">Service Category</p>
+  <h1>Edit <span>category.</span></h1>
+</section>
+<form class="organization-form content-width" action="/edit-category/<%= category.categoryId %>" method="post">
+  <div class="form-field">
+    <label for="name">Category name</label>
+    <input id="name" name="name" type="text" required maxlength="100" value="<%= flash.oldInput?.[0] ?? category.name %>">
+  </div>
+  <button class="button button-light" type="submit">Save changes</button>
+</form>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

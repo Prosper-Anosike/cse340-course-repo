@@ -1,0 +1,33 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">Service Project</p>
+  <h1>Edit <span>project.</span></h1>
+</section>
+<form class="organization-form content-width" action="/edit-project/<%= project.projectId %>" method="post">
+  <div class="form-field">
+    <label for="title">Project title</label>
+    <input id="title" name="title" type="text" required maxlength="150" value="<%= project.title %>">
+  </div>
+  <div class="form-field">
+    <label for="description">Description</label>
+    <textarea id="description" name="description" required maxlength="1000" rows="5"><%= project.description %></textarea>
+  </div>
+  <div class="form-field">
+    <label for="location">Location</label>
+    <input id="location" name="location" type="text" required maxlength="200" value="<%= project.location %>">
+  </div>
+  <div class="form-field">
+    <label for="date">Date</label>
+    <input id="date" name="date" type="date" required value="<%= project.projectDateISO %>">
+  </div>
+  <div class="form-field">
+    <label for="organizationId">Sponsoring organization</label>
+    <select id="organizationId" name="organizationId" required>
+      <% organizations.forEach((organization) => { %>
+      <option value="<%= organization.organizationId %>"<% if (organization.organizationId === project.organizationId) { %> selected<% } %>><%= organization.name %></option>
+      <% }); %>
+    </select>
+  </div>
+  <button class="button button-light" type="submit">Save changes</button>
+</form>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

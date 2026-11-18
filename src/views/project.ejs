@@ -5,6 +5,8 @@
   <p><%= project.description %></p>
   <p class="project-meta"><%= project.location %> &middot; <%= project.projectDate %></p>
   <p>Organized by <a href="/organization/<%= project.organizationId %>"><%= project.organizationName %></a></p>
+  <a class="button button-light" href="/edit-project/<%= project.projectId %>">Edit Project</a>
+  <a class="button button-light" href="/assign-categories/<%= project.projectId %>">Edit Categories</a>
 </section>
 <section class="project-categories content-width" aria-labelledby="project-categories-heading">
   <h2 id="project-categories-heading">Categories</h2>

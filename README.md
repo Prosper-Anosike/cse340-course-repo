@@ -89,6 +89,12 @@ The Organizations, Service Projects, and Categories pages now link to database-b
 
 The Week 03 implementation has been verified locally.
 
+## Week 04 — Organization Form Submissions
+
+Week 04 adds validated organization and category creation/editing, plus service project creation/editing and category assignment. Server-side validation trims and checks submitted fields, normalizes email addresses, validates project dates and sponsoring organizations, and uses parameterized database writes. Invalid submissions redirect with one-time flash errors; successful submissions redirect to the relevant detail page.
+
+Express sessions last one hour and use the course-stage in-memory store. Session secrets are kept in the ignored `.env` file. In-memory sessions are suitable for this course stage and are cleared when the application restarts.
+
 ## Database Structure
 
 The PostgreSQL database contains four tables that work together to organize the application's information.
@@ -187,10 +193,12 @@ Create a `.env` file containing:
 ```dotenv
 DB_URL=YOUR_EXTERNAL_POSTGRES_URL
 NODE_ENV=development
+SESSION_SECRET=YOUR_RANDOM_SESSION_SECRET
 ENABLE_SQL_LOGGING=false
 ```
 
 Replace `YOUR_EXTERNAL_POSTGRES_URL` with the connection URL provided by your PostgreSQL database service.
+Set `SESSION_SECRET` to a cryptographically random value of at least 32 characters. Keep the actual value in the ignored `.env` file and never commit it.
 
 The `DB_SSL_ALLOW_SELF_SIGNED_INTERNAL` setting should remain unset or `false` when connecting through the external database URL.
 
@@ -203,6 +211,7 @@ For the deployed application, configure the following environment variables in t
 ```dotenv
 DB_URL=YOUR_INTERNAL_RENDER_POSTGRES_URL
 NODE_ENV=production
+SESSION_SECRET=YOUR_RANDOM_SESSION_SECRET
 DB_SSL_ALLOW_SELF_SIGNED_INTERNAL=true
 ENABLE_SQL_LOGGING=false
 ```
@@ -247,13 +256,15 @@ The automated tests cover:
 
 * Express routes and HTTP responses.
 * EJS rendering, detail routes, category tags, and database-backed page content using mocked query results.
+* Organization, project, and category forms, validation, duplicate handling, and flash-message redirects.
+* Category assignment transactions, including rollback behavior.
 * Database schema expectations.
 * Database connection and TLS configuration behavior.
 * Error handling when database operations fail.
 
-**Latest automated test results (November 9, 2026):**
+**Latest automated test results (November 18, 2026):**
 
-* 23 tests passed.
+* 50 tests passed.
 * 0 tests failed.
 * 0 dependency vulnerabilities reported by `npm audit`.
 
@@ -312,6 +323,7 @@ This repository contains my coursework and ongoing development for CSE 340.
 * **Week 01:** Initial website creation, Express routing, EJS templates, responsive styling, and deployment.
 * **Week 02:** PostgreSQL database integration, relational database design, dynamic data retrieval, and database-driven EJS rendering.
 * **Week 03:** MVC structure, development middleware, custom error pages, upcoming projects, organization/project/category details, and project-category navigation.
+* **Week 04:** URL-encoded and JSON form parsing, one-hour sessions, one-time flash messages, validated organization/project/category management, and project-category assignments.
 
 Future coursework will build on this foundation with database updates, validation, authentication, and additional backend functionality.
 
