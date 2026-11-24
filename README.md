@@ -95,9 +95,15 @@ Week 04 adds validated organization and category creation/editing, plus service 
 
 Express sessions last one hour and use the course-stage in-memory store. Session secrets are kept in the ignored `.env` file. In-memory sessions are suitable for this course stage and are cleared when the application restarts.
 
+## Week 05 — Authentication and Authorization
+
+Week 05 adds user registration and login with bcrypt password hashes, session regeneration after successful login, and session invalidation on logout. Authenticated users can view their dashboard. Only administrators can access organization, project, category, and project-category management routes; server-side middleware enforces these restrictions independently of administrative link visibility.
+
+Administrators can view the protected Registered Users page, which lists account names, email addresses, and roles without selecting or displaying password hashes. The `roles` and `users` tables are defined in [`src/setup.sql`](src/setup.sql), with an additive migration at [`src/migrations/20261124_add_roles_users.sql`](src/migrations/20261124_add_roles_users.sql) for existing databases. Apply the migration before using registration, login, or the users page against an existing database. It has not been executed as part of this work.
+
 ## Database Structure
 
-The PostgreSQL database contains four tables that work together to organize the application's information.
+The PostgreSQL database contains six tables that work together to organize the application's information.
 
 | Table              | Description                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -105,14 +111,18 @@ The PostgreSQL database contains four tables that work together to organize the 
 | `project`          | Stores service projects, including their descriptions, locations, dates, and sponsoring organizations. |
 | `category`         | Stores the different service categories.                                                               |
 | `project_category` | Connects projects to their categories.                                                                 |
+| `roles`            | Defines user roles, including standard users and administrators.                                        |
+| `users`            | Stores account names, email addresses, password hashes, and role references.                            |
 
 ### Database Relationships
 
-The database uses two main relationships:
+The database uses three main relationships:
 
 **One-to-Many:** An organization can sponsor several service projects, but each project belongs to one organization.
 
 **Many-to-Many:** A service project can belong to multiple categories, and each category can contain multiple projects. The `project_category` table manages this relationship.
+
+**User Roles:** Each user references a role in the `roles` table; the application uses the authenticated session role for authorization.
 
 Primary and foreign keys are used to maintain these relationships and protect the consistency of the data.
 
@@ -128,6 +138,7 @@ To keep the application organized, I separated the database operations into indi
 | [`src/models/organizations.js`](src/models/organizations.js) | Retrieves organization lists and details.                                                  |
 | [`src/models/projects.js`](src/models/projects.js)           | Retrieves upcoming projects, project details, and projects by organization or category.    |
 | [`src/models/categories.js`](src/models/categories.js)       | Retrieves category lists and details, and categories associated with projects.              |
+| [`src/models/users.js`](src/models/users.js)                 | Creates and authenticates users and retrieves safe user listings for administrators.         |
 
 Each model handles the database queries related to its purpose. Controllers call model functions and pass their results to EJS templates for rendering.
 

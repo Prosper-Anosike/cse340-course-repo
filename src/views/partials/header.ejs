@@ -23,6 +23,12 @@
           <a href="/organizations"<% if (currentPath === '/organizations') { %> aria-current="page"<% } %>>Organizations</a>
           <a href="/projects"<% if (currentPath === '/projects') { %> aria-current="page"<% } %>>Service Projects</a>
           <a href="/categories"<% if (currentPath === '/categories') { %> aria-current="page"<% } %>>Categories</a>
+          <% if (isLoggedIn) { %>
+          <a href="/logout">Logout</a>
+          <% } else { %>
+          <a href="/register"<% if (currentPath === '/register') { %> aria-current="page"<% } %>>Register</a>
+          <a href="/login"<% if (currentPath === '/login') { %> aria-current="page"<% } %>>Login</a>
+          <% } %>
         </nav>
       </div>
     </header>

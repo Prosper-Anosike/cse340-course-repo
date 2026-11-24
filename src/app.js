@@ -25,6 +25,24 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(createSessionMiddleware());
 app.use(flash);
+app.use((request, response, next) => {
+  const sessionUser = request.session.user;
+  const currentUser = sessionUser
+    ? {
+      userId: sessionUser.userId,
+      name: sessionUser.name,
+      email: sessionUser.email,
+      roleId: sessionUser.roleId,
+      roleName: sessionUser.roleName,
+      roleDescription: sessionUser.roleDescription,
+    }
+    : null;
+
+  response.locals.isLoggedIn = currentUser !== null;
+  response.locals.isAdmin = currentUser?.roleName === 'admin';
+  response.locals.currentUser = currentUser;
+  next();
+});
 app.use(express.static(path.join(currentDirectory, '..', 'public')));
 app.use(router);
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import bcrypt from 'bcrypt';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { after, before, mock, test } from 'node:test';
@@ -6,6 +7,7 @@ import { createPoolConfig, createTransactionRunner, database, testConnection } f
 import { createCategory, getAllCategories, getCategoriesByProjectId, getCategoryDetails, updateCategory, updateCategoryAssignments } from '../src/models/categories.js';
 import { createOrganization, getAllOrganizations, getOrganizationDetails, updateOrganization } from '../src/models/organizations.js';
 import { createProject, getAllProjects, getProjectDetails, getProjectsByCategoryId, getProjectsByOrganizationId, getUpcomingProjects, updateProject } from '../src/models/projects.js';
+import { authenticateUser, createUser, findUserByEmail, getAllUsers, verifyPassword } from '../src/models/users.js';
 import { createSessionMiddleware } from '../src/middleware/session.js';
 
 const originalSessionSecret = process.env.SESSION_SECRET;
@@ -19,10 +21,12 @@ if (originalSessionSecret === undefined) {
 
 let server;
 let baseUrl;
+let adminCookie;
 let queryMock;
 let transactionMock;
 let failDatabaseQueries = false;
 let escapeOrganizationDescription = false;
+let returnEmptyUserList = false;
 const createdOrganizations = [];
 const createdProjects = [];
 let lastOrganizationInsert;
@@ -37,6 +41,25 @@ const createdCategories = [];
 let lastCategoryInsert;
 let lastCategoryUpdate;
 const updatedCategoryNames = new Map();
+const createdUsers = [];
+let lastUserInsert;
+
+const adminFetch = async (url, options = {}) => {
+  const headers = new Headers(options.headers);
+  if (!headers.has('cookie') && adminCookie) {
+    headers.set('cookie', adminCookie);
+  }
+
+  return fetch(url, { ...options, headers });
+};
+
+const roles = [
+  { roleId: 1, roleName: 'user', roleDescription: 'Standard user with basic access' },
+  { roleId: 2, roleName: 'admin', roleDescription: 'Administrator with full system access' },
+];
+
+const existingPasswordHash = await bcrypt.hash('correct-password', 10);
+const adminPasswordHash = await bcrypt.hash('admin-password', 10);
 
 const organizations = [
   {
@@ -214,6 +237,23 @@ const categories = [
   { categoryId: 4, name: 'Health and Wellness' },
 ];
 
+const users = [
+  {
+    userId: 1,
+    name: 'Existing User',
+    email: 'existing@example.com',
+    passwordHash: existingPasswordHash,
+    roleId: 1,
+  },
+  {
+    userId: 2,
+    name: 'Site Administrator',
+    email: 'admin@example.com',
+    passwordHash: adminPasswordHash,
+    roleId: 2,
+  },
+];
+
 const projectCategoryAssociations = [
   [4, 3], [6, 3], [8, 1], [8, 3], [10, 3], [13, 1], [13, 2],
   [5, 1], [5, 3], [7, 1], [7, 2], [9, 3], [11, 1], [11, 2], [14, 1], [14, 2],
@@ -345,6 +385,73 @@ const mockedQuery = async (statement, values = []) => {
 
     updatedCategoryNames.set(category.categoryId, values[1]);
     return { rows: [{ categoryId: category.categoryId }] };
+  }
+
+  if (normalizedStatement.includes('insert into users')) {
+    lastUserInsert = { statement, values };
+
+    if ([...users, ...createdUsers].some((user) => user.email === values[1])) {
+      const error = new Error('Duplicate user email.');
+      error.code = '23505';
+      throw error;
+    }
+
+    if (!normalizedStatement.includes("where roles.role_name = 'user'")) {
+      throw new Error('User creation query must assign the standard user role.');
+    }
+
+    const userRole = roles.find((role) => role.roleName === 'user');
+    const user = {
+      userId: users.length + createdUsers.length + 1,
+      name: values[0],
+      email: values[1],
+      passwordHash: values[2],
+      roleId: userRole?.roleId ?? null,
+    };
+
+    createdUsers.push(user);
+    return { rows: user.roleId ? [{ userId: user.userId }] : [] };
+  }
+
+  if (normalizedStatement.includes('from users')
+      && normalizedStatement.includes('inner join roles')
+      && !normalizedStatement.includes('where users.email = $1')) {
+    if (returnEmptyUserList) {
+      return { rows: [] };
+    }
+
+    const userRows = [...users, ...createdUsers]
+      .map((user) => ({
+        userId: user.userId,
+        name: user.name,
+        email: user.email,
+        roleName: roles.find((role) => role.roleId === user.roleId)?.roleName,
+      }))
+      .filter((user) => user.roleName)
+      .sort((firstUser, secondUser) => firstUser.name.localeCompare(secondUser.name)
+        || firstUser.userId - secondUser.userId);
+    return { rows: userRows };
+  }
+
+  if (normalizedStatement.includes('from users') && normalizedStatement.includes('where users.email = $1')) {
+    const user = [...users, ...createdUsers].find((record) => record.email === values[0]);
+
+    if (!user) {
+      return { rows: [] };
+    }
+
+    const role = roles.find((record) => record.roleId === user.roleId);
+    return {
+      rows: [{
+        userId: user.userId,
+        name: user.name,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        roleId: user.roleId,
+        roleName: role?.roleName,
+        roleDescription: role?.roleDescription,
+      }],
+    };
   }
 
   if (normalizedStatement.includes('from project')) {
@@ -490,6 +597,16 @@ before(async () => {
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+
+  const loginResponse = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'admin@example.com', password: 'admin-password' }),
+    redirect: 'manual',
+  });
+  assert.equal(loginResponse.status, 302);
+  adminCookie = loginResponse.headers.get('set-cookie')?.split(';', 1)[0];
+  assert.ok(adminCookie);
 });
 
 after(async () => {
@@ -503,6 +620,8 @@ for (const [route, pageTitle] of [
   ['/organizations', 'Organizations'],
   ['/projects', 'Service Projects'],
   ['/categories', 'Categories'],
+  ['/register', 'Register'],
+  ['/login', 'Log In'],
 ]) {
   test(`${route} renders its title, shared navigation, and footer`, async () => {
     const response = await fetch(`${baseUrl}${route}`);
@@ -518,6 +637,9 @@ for (const [route, pageTitle] of [
     assert.match(html, /href="\/organizations"/);
     assert.match(html, /href="\/projects"/);
     assert.match(html, /href="\/categories"/);
+    assert.match(html, /href="\/register"/);
+    assert.match(html, /href="\/login"/);
+    assert.doesNotMatch(html, /href="\/logout"/);
     assert.equal((html.match(/aria-current="page"/g) ?? []).length, 1);
     assert.match(html, /&copy; \d{4} CSE 340 Service Network/);
   });
@@ -532,10 +654,420 @@ test('home page displays the required mission and official course image', async 
   assert.match(html, /src="\/images\/cse340-service-network\.png"/);
   assert.match(html, /alt="CSE 340 Service Network"/);
   assert.match(html, /<a class="button button-light" href="\/projects">Explore service projects/);
+  assert.doesNotMatch(html, /href="\/dashboard"/);
+});
+
+test('login form has labeled required email and password inputs', async () => {
+  const response = await fetch(`${baseUrl}/login`);
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /<form[^>]+action="\/login"[^>]+method="post"/);
+  assert.match(html, /<label for="email">Email<\/label>/);
+  assert.match(html, /<input id="email" name="email" type="email" required/);
+  assert.match(html, /<label for="password">Password<\/label>/);
+  assert.match(html, /<input id="password" name="password" type="password" required/);
+});
+
+test('user lookup is parameterized and authentication only returns safe user fields', async () => {
+  const user = await findUserByEmail('existing@example.com');
+  assert.match(queryMock.mock.calls.at(-1).arguments[0], /WHERE users\.email = \$1/);
+  assert.deepEqual(queryMock.mock.calls.at(-1).arguments[1], ['existing@example.com']);
+  assert.equal(user.passwordHash, existingPasswordHash);
+
+  assert.equal(await verifyPassword('correct-password', existingPasswordHash), true);
+  assert.equal(await verifyPassword('incorrect-password', existingPasswordHash), false);
+
+  const authenticatedUser = await authenticateUser('existing@example.com', 'correct-password');
+  assert.deepEqual(authenticatedUser, {
+    userId: 1,
+    name: 'Existing User',
+    email: 'existing@example.com',
+    roleId: 1,
+    roleName: 'user',
+    roleDescription: 'Standard user with basic access',
+  });
+  assert.equal(Object.hasOwn(authenticatedUser, 'passwordHash'), false);
+  assert.equal(await authenticateUser('existing@example.com', 'incorrect-password'), null);
+  assert.equal(await authenticateUser('missing@example.com', 'correct-password'), null);
+});
+
+test('incorrect login credentials use a generic flash message and redirect', async () => {
+  const response = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'wrong-password' }),
+    redirect: 'manual',
+  });
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), '/login');
+  const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
+  const html = await (await fetch(`${baseUrl}/login`, { headers: { cookie } })).text();
+  assert.match(html, /Email or password is incorrect\./);
+  assert.doesNotMatch(html, /wrong-password|passwordHash|\$2[aby]\$/);
+});
+
+test('successful login persists safe session state and grants dashboard access', async () => {
+  const response = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: ' Existing@Example.com ', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), '/dashboard');
+  const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
+  assert.ok(cookie);
+  assert.doesNotMatch(response.headers.get('set-cookie'), /passwordHash|correct-password|\$2[aby]\$/);
+
+  const dashboardResponse = await fetch(`${baseUrl}/dashboard`, { headers: { cookie } });
+  const dashboardHtml = await dashboardResponse.text();
+  assert.equal(dashboardResponse.status, 200);
+  assert.match(dashboardHtml, /Existing User/);
+  assert.match(dashboardHtml, /existing@example\.com/);
+  assert.match(dashboardHtml, /href="\/logout">Logout/);
+  assert.doesNotMatch(dashboardHtml, /passwordHash|correct-password|\$2[aby]\$/);
+
+  const homeHtml = await (await fetch(`${baseUrl}/`, { headers: { cookie } })).text();
+  assert.match(homeHtml, /href="\/dashboard">My Dashboard/);
+  assert.doesNotMatch(homeHtml, /href="\/register"|href="\/login"/);
+  assert.match(dashboardHtml, /Welcome back, Existing User\./);
+});
+
+test('anonymous dashboard access redirects with an error flash', async () => {
+  const response = await fetch(`${baseUrl}/dashboard`, { redirect: 'manual' });
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), '/login');
+  const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
+  const loginHtml = await (await fetch(`${baseUrl}/login`, { headers: { cookie } })).text();
+  assert.match(loginHtml, /Please log in to access this page\./);
+});
+
+test('logout invalidates the session, clears its cookie, and confirms logout', async () => {
+  const loginResponse = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+  const cookie = loginResponse.headers.get('set-cookie')?.split(';', 1)[0];
+
+  const logoutResponse = await fetch(`${baseUrl}/logout`, {
+    headers: { cookie },
+    redirect: 'manual',
+  });
+  assert.equal(logoutResponse.status, 302);
+  assert.equal(logoutResponse.headers.get('location'), '/login?loggedOut=1');
+  assert.match(logoutResponse.headers.get('set-cookie'), /connect\.sid=;/);
+
+  const dashboardResponse = await fetch(`${baseUrl}/dashboard`, {
+    headers: { cookie },
+    redirect: 'manual',
+  });
+  assert.equal(dashboardResponse.status, 302);
+  assert.equal(dashboardResponse.headers.get('location'), '/login');
+
+  const loginHtml = await (await fetch(`${baseUrl}/login?loggedOut=1`)).text();
+  assert.match(loginHtml, /You have been logged out successfully\./);
+  assert.match(loginHtml, /href="\/register"/);
+  assert.match(loginHtml, /href="\/login"/);
+  assert.doesNotMatch(loginHtml, /href="\/logout"|passwordHash|\$2[aby]\$/);
+});
+
+test('anonymous and regular users are denied every administrative route before writes', async () => {
+  const administrativeRoutes = [
+    '/new-organization',
+    '/edit-organization/1',
+    '/new-project',
+    '/edit-project/1',
+    '/new-category',
+    '/edit-category/1',
+    '/assign-categories/1',
+  ];
+  const writeCount = () => queryMock.mock.calls.filter((call) => (
+    /^\s*(INSERT|UPDATE|DELETE)\b/i.test(call.arguments[0])
+  )).length;
+  const initialWriteCount = writeCount();
+  const initialTransactionCount = transactionEvents.length;
+
+  let anonymousFlashCookie;
+  for (const route of administrativeRoutes) {
+    for (const method of ['GET', 'POST']) {
+      const response = await fetch(`${baseUrl}${route}?role=admin`, {
+        method,
+        headers: method === 'POST' ? { 'content-type': 'application/x-www-form-urlencoded' } : {},
+        body: method === 'POST' ? new URLSearchParams({ role: 'admin' }) : undefined,
+        redirect: 'manual',
+      });
+      assert.equal(response.status, 302, `anonymous ${method} ${route} should redirect`);
+      assert.equal(response.headers.get('location'), '/login');
+      anonymousFlashCookie ??= response.headers.get('set-cookie')?.split(';', 1)[0];
+    }
+  }
+
+  const anonymousLoginHtml = await (await fetch(`${baseUrl}/login`, {
+    headers: { cookie: anonymousFlashCookie },
+  })).text();
+  assert.match(anonymousLoginHtml, /Please log in to access this page\./);
+
+  const regularLoginResponse = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+  assert.equal(regularLoginResponse.status, 302);
+  const regularCookie = regularLoginResponse.headers.get('set-cookie')?.split(';', 1)[0];
+  assert.ok(regularCookie);
+
+  for (const route of administrativeRoutes) {
+    for (const method of ['GET', 'POST']) {
+      const response = await fetch(`${baseUrl}${route}?role=admin`, {
+        method,
+        headers: {
+          cookie: regularCookie,
+          ...(method === 'POST' ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+        },
+        body: method === 'POST' ? new URLSearchParams({ role: 'admin' }) : undefined,
+        redirect: 'manual',
+      });
+      assert.equal(response.status, 302, `regular-user ${method} ${route} should redirect`);
+      assert.equal(response.headers.get('location'), '/dashboard');
+    }
+  }
+
+  const regularDashboardHtml = await (await fetch(`${baseUrl}/dashboard`, {
+    headers: { cookie: regularCookie },
+  })).text();
+  assert.match(regularDashboardHtml, /You do not have permission to access that page\./);
+  assert.equal(writeCount(), initialWriteCount);
+  assert.equal(transactionEvents.length, initialTransactionCount);
+});
+
+test('administrators can load every administrative form', async () => {
+  for (const route of [
+    '/new-organization',
+    '/edit-organization/1',
+    '/new-project',
+    '/edit-project/1',
+    '/new-category',
+    '/edit-category/1',
+    '/assign-categories/1',
+  ]) {
+    const response = await adminFetch(`${baseUrl}${route}`);
+    assert.equal(response.status, 200, `administrator GET ${route} should be allowed`);
+  }
+});
+
+test('administrative links are hidden from anonymous and regular users but visible to admins', async () => {
+  const publicPages = [
+    ['/organizations', ['/new-organization']],
+    ['/organization/1', ['/edit-organization/1']],
+    ['/projects', ['/new-project']],
+    ['/project/1', ['/edit-project/1', '/assign-categories/1']],
+    ['/categories', ['/new-category']],
+    ['/category/1', ['/edit-category/1']],
+  ];
+  const restrictedLink = /href="\/(?:new-organization|edit-organization\/\d+|new-project|edit-project\/\d+|new-category|edit-category\/\d+|assign-categories\/\d+)"/;
+  const regularLoginResponse = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+  const regularCookie = regularLoginResponse.headers.get('set-cookie')?.split(';', 1)[0];
+
+  for (const [route, adminLinks] of publicPages) {
+    const anonymousResponse = await fetch(`${baseUrl}${route}`);
+    const anonymousHtml = await anonymousResponse.text();
+    assert.equal(anonymousResponse.status, 200, `${route} remains public`);
+    assert.doesNotMatch(anonymousHtml, restrictedLink);
+
+    const regularResponse = await fetch(`${baseUrl}${route}`, { headers: { cookie: regularCookie } });
+    const regularHtml = await regularResponse.text();
+    assert.equal(regularResponse.status, 200, `${route} remains public for regular users`);
+    assert.doesNotMatch(regularHtml, restrictedLink);
+
+    const adminHtml = await (await adminFetch(`${baseUrl}${route}`)).text();
+    for (const link of adminLinks) {
+      assert.ok(adminHtml.includes(`href="${link}"`), `${route} should show ${link} to admins`);
+    }
+  }
+});
+
+test('registered users page is admin-only and never returns or renders password hashes', async () => {
+  const anonymousResponse = await fetch(`${baseUrl}/users?direct=1`, { redirect: 'manual' });
+  assert.equal(anonymousResponse.status, 302);
+  assert.equal(anonymousResponse.headers.get('location'), '/login');
+  const anonymousCookie = anonymousResponse.headers.get('set-cookie')?.split(';', 1)[0];
+  const anonymousLoginHtml = await (await fetch(`${baseUrl}/login`, {
+    headers: { cookie: anonymousCookie },
+  })).text();
+  assert.match(anonymousLoginHtml, /Please log in to access this page\./);
+
+  const regularLoginResponse = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+  const regularCookie = regularLoginResponse.headers.get('set-cookie')?.split(';', 1)[0];
+  const regularResponse = await fetch(`${baseUrl}/users`, {
+    headers: { cookie: regularCookie },
+    redirect: 'manual',
+  });
+  assert.equal(regularResponse.status, 302);
+  assert.equal(regularResponse.headers.get('location'), '/dashboard');
+  const regularDashboardHtml = await (await fetch(`${baseUrl}/dashboard`, {
+    headers: { cookie: regularCookie },
+  })).text();
+  assert.match(regularDashboardHtml, /You do not have permission to access that page\./);
+  assert.doesNotMatch(regularDashboardHtml, /href="\/users">View Registered Users/);
+
+  const adminDashboardHtml = await (await adminFetch(`${baseUrl}/dashboard`)).text();
+  assert.match(adminDashboardHtml, /href="\/users">View Registered Users/);
+
+  const response = await adminFetch(`${baseUrl}/users`);
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /<h1>Registered <span>Users<\/span><\/h1>/);
+  assert.match(html, /Site Administrator/);
+  assert.match(html, /admin@example\.com/);
+  assert.match(html, />admin</);
+  assert.match(html, /Existing User/);
+  assert.match(html, /existing@example\.com/);
+  assert.match(html, />user</);
+  assert.doesNotMatch(html, /password_hash|passwordHash|\$2[aby]\$/i);
+  assert.equal(html.includes(existingPasswordHash), false);
+  assert.equal(html.includes(adminPasswordHash), false);
+  assert.doesNotMatch(queryMock.mock.calls.at(-1).arguments[0], /password_hash/i);
+});
+
+test('users page renders its empty state when no accounts are returned', async () => {
+  returnEmptyUserList = true;
+  try {
+    const response = await adminFetch(`${baseUrl}/users`);
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /No registered users yet\./);
+    assert.doesNotMatch(html, /<tbody>/);
+  } finally {
+    returnEmptyUserList = false;
+  }
+});
+
+test('registration form exposes accessible client-side constraints', async () => {
+  const response = await fetch(`${baseUrl}/register`);
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /<form[^>]+action="\/register"[^>]+method="post"/);
+  assert.match(html, /<label for="name">Name<\/label>/);
+  assert.match(html, /<input id="name" name="name" type="text" required maxlength="100"/);
+  assert.match(html, /<label for="email">Email<\/label>/);
+  assert.match(html, /<input id="email" name="email" type="email" required maxlength="100"/);
+  assert.match(html, /<label for="password">Password<\/label>/);
+  assert.match(html, /<input id="password" name="password" type="password" required/);
+});
+
+test('registration validation rejects invalid submissions without database writes', async () => {
+  const initialUserCount = createdUsers.length;
+  const response = await fetch(`${baseUrl}/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ name: '', email: 'not-an-email', password: '' }),
+    redirect: 'manual',
+  });
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), '/register');
+  assert.equal(createdUsers.length, initialUserCount);
+
+  const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
+  const formHtml = await (await fetch(`${baseUrl}/register`, { headers: { cookie } })).text();
+  assert.match(formHtml, /Name is required\./);
+  assert.match(formHtml, /Enter a valid email address\./);
+  assert.match(formHtml, /Password is required\./);
+
+  const overLimitResponse = await fetch(`${baseUrl}/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      name: 'N'.repeat(101),
+      email: `${'e'.repeat(90)}@example.com`,
+      password: 'cse340!',
+    }),
+    redirect: 'manual',
+  });
+  assert.equal(overLimitResponse.status, 302);
+  assert.equal(createdUsers.length, initialUserCount);
+  const overLimitCookie = overLimitResponse.headers.get('set-cookie')?.split(';', 1)[0];
+  const overLimitHtml = await (await fetch(`${baseUrl}/register`, { headers: { cookie: overLimitCookie } })).text();
+  assert.match(overLimitHtml, /Name must be no more than 100 characters\./);
+  assert.match(overLimitHtml, /Email must be no more than 100 characters\./);
+});
+
+test('valid registration hashes the password, inserts a standard user, and redirects home', async () => {
+  const response = await fetch(`${baseUrl}/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      name: '  New Course User  ',
+      email: ' NewUser@Example.com ',
+      password: 'cse340!',
+    }),
+    redirect: 'manual',
+  });
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), '/');
+  assert.match(lastUserInsert.statement, /INSERT INTO users/);
+  assert.match(lastUserInsert.statement, /SELECT \$1, \$2, \$3, roles\.role_id/);
+  assert.match(lastUserInsert.statement, /FROM roles/);
+  assert.match(lastUserInsert.statement, /WHERE roles\.role_name = 'user'/);
+  assert.match(lastUserInsert.statement, /RETURNING user_id/);
+  assert.equal(lastUserInsert.values[0], 'New Course User');
+  assert.equal(lastUserInsert.values[1], 'newuser@example.com');
+  assert.notEqual(lastUserInsert.values[2], 'cse340!');
+  assert.ok(lastUserInsert.values[2].startsWith('$2'));
+  assert.equal(await bcrypt.compare('cse340!', lastUserInsert.values[2]), true);
+
+  const createdUser = createdUsers.at(-1);
+  assert.equal(createdUser.roleId, 1);
+
+  const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
+  const homeHtml = await (await fetch(`${baseUrl}/`, { headers: { cookie } })).text();
+  assert.match(homeHtml, /Registration successful\. Please log in\./);
+  assert.doesNotMatch(await (await fetch(`${baseUrl}/`, { headers: { cookie } })).text(), /Registration successful\./);
+});
+
+test('duplicate registration email returns a safe flash message', async () => {
+  const initialUserCount = createdUsers.length;
+  const response = await fetch(`${baseUrl}/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      name: 'Duplicate User',
+      email: 'existing@example.com',
+      password: 'cse340!',
+    }),
+    redirect: 'manual',
+  });
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), '/register');
+  assert.equal(createdUsers.length, initialUserCount);
+  const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
+  const html = await (await fetch(`${baseUrl}/register`, { headers: { cookie } })).text();
+  assert.match(html, /An account with this email already exists\./);
+  assert.doesNotMatch(html, /23505|Duplicate user email/);
 });
 
 test('new organization form exposes accessible client-side constraints', async () => {
-  const response = await fetch(`${baseUrl}/new-organization`);
+  const response = await adminFetch(`${baseUrl}/new-organization`);
   const html = await response.text();
 
   assert.equal(response.status, 200);
@@ -549,7 +1081,7 @@ test('new organization form exposes accessible client-side constraints', async (
 
 test('invalid organization submissions redirect with one-time errors and do not insert', async () => {
   const initialInsertCount = createdOrganizations.length;
-  const response = await fetch(`${baseUrl}/new-organization`, {
+  const response = await adminFetch(`${baseUrl}/new-organization`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ name: ' a ', description: ' ', contactEmail: 'not-an-email' }),
@@ -562,7 +1094,7 @@ test('invalid organization submissions redirect with one-time errors and do not 
 
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
   assert.ok(cookie);
-  const formResponse = await fetch(`${baseUrl}/new-organization`, { headers: { cookie } });
+  const formResponse = await adminFetch(`${baseUrl}/new-organization`, { headers: { cookie } });
   const formHtml = await formResponse.text();
   assert.equal(formResponse.status, 200);
   assert.match(formHtml, /class="flash-message flash-error" role="alert"/);
@@ -570,10 +1102,10 @@ test('invalid organization submissions redirect with one-time errors and do not 
   assert.match(formHtml, /Organization description is required\./);
   assert.match(formHtml, /Enter a valid contact email address\./);
 
-  const refreshedResponse = await fetch(`${baseUrl}/new-organization`, { headers: { cookie } });
+  const refreshedResponse = await adminFetch(`${baseUrl}/new-organization`, { headers: { cookie } });
   assert.doesNotMatch(await refreshedResponse.text(), /class="flash-message flash-error"/);
 
-  const overLimitResponse = await fetch(`${baseUrl}/new-organization`, {
+  const overLimitResponse = await adminFetch(`${baseUrl}/new-organization`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ name: 'N'.repeat(151), description: 'D'.repeat(501), contactEmail: 'valid@example.com' }),
@@ -582,11 +1114,11 @@ test('invalid organization submissions redirect with one-time errors and do not 
   assert.equal(overLimitResponse.status, 302);
   assert.equal(createdOrganizations.length, initialInsertCount);
   const overLimitCookie = overLimitResponse.headers.get('set-cookie')?.split(';', 1)[0];
-  const overLimitHtml = await (await fetch(`${baseUrl}/new-organization`, { headers: { cookie: overLimitCookie } })).text();
+  const overLimitHtml = await (await adminFetch(`${baseUrl}/new-organization`, { headers: { cookie: overLimitCookie } })).text();
   assert.match(overLimitHtml, /Organization name must be between 3 and 150 characters\./);
   assert.match(overLimitHtml, /Organization description must be no more than 500 characters\./);
 
-  const overlongEmail = await fetch(`${baseUrl}/new-organization`, {
+  const overlongEmail = await adminFetch(`${baseUrl}/new-organization`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -599,12 +1131,12 @@ test('invalid organization submissions redirect with one-time errors and do not 
   assert.equal(overlongEmail.status, 302);
   assert.equal(createdOrganizations.length, initialInsertCount);
   const overlongEmailCookie = overlongEmail.headers.get('set-cookie')?.split(';', 1)[0];
-  const overlongEmailHtml = await (await fetch(`${baseUrl}/new-organization`, { headers: { cookie: overlongEmailCookie } })).text();
+  const overlongEmailHtml = await (await adminFetch(`${baseUrl}/new-organization`, { headers: { cookie: overlongEmailCookie } })).text();
   assert.match(overlongEmailHtml, /Contact email must be no more than 255 characters\./);
 });
 
 test('valid organization form inserts normalized parameters and flashes success once', async () => {
-  const response = await fetch(`${baseUrl}/new-organization`, {
+  const response = await adminFetch(`${baseUrl}/new-organization`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -634,19 +1166,19 @@ test('valid organization form inserts normalized parameters and flashes success 
   const expiry = Date.parse(setCookieHeader.match(/Expires=([^;]+)/i)?.[1] ?? '');
   assert.ok(expiry - Date.now() > 59 * 60 * 1000 && expiry - Date.now() <= 60 * 60 * 1000);
   assert.match(setCookieHeader, /HttpOnly/i);
-  const detailsResponse = await fetch(`${baseUrl}${response.headers.get('location')}`, { headers: { cookie } });
+  const detailsResponse = await adminFetch(`${baseUrl}${response.headers.get('location')}`, { headers: { cookie } });
   const detailsHtml = await detailsResponse.text();
   assert.equal(detailsResponse.status, 200);
   assert.match(detailsHtml, /class="flash-message flash-success" role="status"/);
   assert.match(detailsHtml, /Organization created successfully\./);
 
-  const refreshedResponse = await fetch(`${baseUrl}${response.headers.get('location')}`, { headers: { cookie } });
+  const refreshedResponse = await adminFetch(`${baseUrl}${response.headers.get('location')}`, { headers: { cookie } });
   assert.doesNotMatch(await refreshedResponse.text(), /class="flash-message flash-success"/);
 });
 
 test('duplicate organization names return a friendly flash on create and edit', async () => {
   const initialOrganizationCount = createdOrganizations.length;
-  const createResponse = await fetch(`${baseUrl}/new-organization`, {
+  const createResponse = await adminFetch(`${baseUrl}/new-organization`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ name: 'BrightFuture Builders', description: 'Duplicate name.', contactEmail: 'duplicate@example.com' }),
@@ -657,11 +1189,11 @@ test('duplicate organization names return a friendly flash on create and edit', 
   assert.equal(createResponse.headers.get('location'), '/new-organization');
   assert.equal(createdOrganizations.length, initialOrganizationCount);
   const createCookie = createResponse.headers.get('set-cookie')?.split(';', 1)[0];
-  const createHtml = await (await fetch(`${baseUrl}/new-organization`, { headers: { cookie: createCookie } })).text();
+  const createHtml = await (await adminFetch(`${baseUrl}/new-organization`, { headers: { cookie: createCookie } })).text();
   assert.match(createHtml, /An organization with this name already exists\./);
   assert.doesNotMatch(createHtml, /23505|Duplicate organization name/);
 
-  const editResponse = await fetch(`${baseUrl}/edit-organization/1`, {
+  const editResponse = await adminFetch(`${baseUrl}/edit-organization/1`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -675,12 +1207,12 @@ test('duplicate organization names return a friendly flash on create and edit', 
   assert.equal(editResponse.status, 302);
   assert.equal(editResponse.headers.get('location'), '/edit-organization/1');
   const editCookie = editResponse.headers.get('set-cookie')?.split(';', 1)[0];
-  const editHtml = await (await fetch(`${baseUrl}/edit-organization/1`, { headers: { cookie: editCookie } })).text();
+  const editHtml = await (await adminFetch(`${baseUrl}/edit-organization/1`, { headers: { cookie: editCookie } })).text();
   assert.match(editHtml, /An organization with this name already exists\./);
 });
 
 test('JSON body parsing accepts a valid organization submission', async () => {
-  const response = await fetch(`${baseUrl}/new-organization`, {
+  const response = await adminFetch(`${baseUrl}/new-organization`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -697,9 +1229,9 @@ test('JSON body parsing accepts a valid organization submission', async () => {
 });
 
 test('edit organization form is prepopulated and linked from the detail page', async () => {
-  const response = await fetch(`${baseUrl}/edit-organization/1`);
+  const response = await adminFetch(`${baseUrl}/edit-organization/1`);
   const html = await response.text();
-  const detailResponse = await fetch(`${baseUrl}/organization/1`);
+  const detailResponse = await adminFetch(`${baseUrl}/organization/1`);
   const detailHtml = await detailResponse.text();
 
   assert.equal(response.status, 200);
@@ -712,7 +1244,7 @@ test('edit organization form is prepopulated and linked from the detail page', a
 });
 
 test('valid organization edits update parameterized fields and flash once after redirect', async () => {
-  const response = await fetch(`${baseUrl}/edit-organization/1`, {
+  const response = await adminFetch(`${baseUrl}/edit-organization/1`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -738,15 +1270,15 @@ test('valid organization edits update parameterized fields and flash once after 
 
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
   const detailUrl = `${baseUrl}${response.headers.get('location')}`;
-  const detailHtml = await (await fetch(detailUrl, { headers: { cookie } })).text();
+  const detailHtml = await (await adminFetch(detailUrl, { headers: { cookie } })).text();
   assert.match(detailHtml, /Organization updated successfully\./);
-  const refreshedHtml = await (await fetch(detailUrl, { headers: { cookie } })).text();
+  const refreshedHtml = await (await adminFetch(detailUrl, { headers: { cookie } })).text();
   assert.doesNotMatch(refreshedHtml, /Organization updated successfully\./);
 });
 
 test('invalid edit submissions redirect with errors and do not update', async () => {
   const initialUpdateCount = organizationUpdateCount;
-  const response = await fetch(`${baseUrl}/edit-organization/1`, {
+  const response = await adminFetch(`${baseUrl}/edit-organization/1`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -762,9 +1294,9 @@ test('invalid edit submissions redirect with errors and do not update', async ()
   assert.equal(response.headers.get('location'), '/edit-organization/1');
   assert.equal(organizationUpdateCount, initialUpdateCount);
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
-  const editHtml = await (await fetch(`${baseUrl}/edit-organization/1`, { headers: { cookie } })).text();
+  const editHtml = await (await adminFetch(`${baseUrl}/edit-organization/1`, { headers: { cookie } })).text();
   assert.match(editHtml, /Logo filename is required\./);
-  const overlongLogo = await fetch(`${baseUrl}/edit-organization/1`, {
+  const overlongLogo = await adminFetch(`${baseUrl}/edit-organization/1`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -780,7 +1312,7 @@ test('invalid edit submissions redirect with errors and do not update', async ()
 });
 
 test('new project form lists organizations and enforces client-side field requirements', async () => {
-  const response = await fetch(`${baseUrl}/new-project`);
+  const response = await adminFetch(`${baseUrl}/new-project`);
   const html = await response.text();
 
   assert.equal(response.status, 200);
@@ -796,7 +1328,7 @@ test('new project form lists organizations and enforces client-side field requir
 
 test('invalid project submissions flash errors and do not insert', async () => {
   const initialProjectCount = createdProjects.length;
-  const response = await fetch(`${baseUrl}/new-project`, {
+  const response = await adminFetch(`${baseUrl}/new-project`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -813,14 +1345,14 @@ test('invalid project submissions flash errors and do not insert', async () => {
   assert.equal(response.headers.get('location'), '/new-project');
   assert.equal(createdProjects.length, initialProjectCount);
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
-  const formHtml = await (await fetch(`${baseUrl}/new-project`, { headers: { cookie } })).text();
+  const formHtml = await (await adminFetch(`${baseUrl}/new-project`, { headers: { cookie } })).text();
   assert.match(formHtml, /Project title must be between 3 and 150 characters\./);
   assert.match(formHtml, /Project description is required\./);
   assert.match(formHtml, /Project location is required\./);
   assert.match(formHtml, /Enter a valid project date\./);
   assert.match(formHtml, /Select an existing sponsoring organization\./);
 
-  const overlongSubmission = await fetch(`${baseUrl}/new-project`, {
+  const overlongSubmission = await adminFetch(`${baseUrl}/new-project`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -837,7 +1369,7 @@ test('invalid project submissions flash errors and do not insert', async () => {
 });
 
 test('valid project submission binds INSERT parameters and flashes after redirect', async () => {
-  const response = await fetch(`${baseUrl}/new-project`, {
+  const response = await adminFetch(`${baseUrl}/new-project`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -867,16 +1399,16 @@ test('valid project submission binds INSERT parameters and flashes after redirec
 
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
   const projectUrl = `${baseUrl}${response.headers.get('location')}`;
-  const detailHtml = await (await fetch(projectUrl, { headers: { cookie } })).text();
+  const detailHtml = await (await adminFetch(projectUrl, { headers: { cookie } })).text();
   assert.match(detailHtml, /Service project created successfully\./);
   assert.match(detailHtml, /Community Supply Drive/);
-  const refreshedHtml = await (await fetch(projectUrl, { headers: { cookie } })).text();
+  const refreshedHtml = await (await adminFetch(projectUrl, { headers: { cookie } })).text();
   assert.doesNotMatch(refreshedHtml, /Service project created successfully\./);
 });
 
 test('duplicate project title and organization pairs return friendly create/edit flashes', async () => {
   const initialProjectCount = createdProjects.length;
-  const createResponse = await fetch(`${baseUrl}/new-project`, {
+  const createResponse = await adminFetch(`${baseUrl}/new-project`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -893,11 +1425,11 @@ test('duplicate project title and organization pairs return friendly create/edit
   assert.equal(createResponse.headers.get('location'), '/new-project');
   assert.equal(createdProjects.length, initialProjectCount);
   const createCookie = createResponse.headers.get('set-cookie')?.split(';', 1)[0];
-  const createHtml = await (await fetch(`${baseUrl}/new-project`, { headers: { cookie: createCookie } })).text();
+  const createHtml = await (await adminFetch(`${baseUrl}/new-project`, { headers: { cookie: createCookie } })).text();
   assert.match(createHtml, /A project with this title already exists for that organization\./);
   assert.doesNotMatch(createHtml, /23505|Duplicate project title/);
 
-  const editResponse = await fetch(`${baseUrl}/edit-project/4`, {
+  const editResponse = await adminFetch(`${baseUrl}/edit-project/4`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -912,14 +1444,14 @@ test('duplicate project title and organization pairs return friendly create/edit
   assert.equal(editResponse.status, 302);
   assert.equal(editResponse.headers.get('location'), '/edit-project/4');
   const editCookie = editResponse.headers.get('set-cookie')?.split(';', 1)[0];
-  const editHtml = await (await fetch(`${baseUrl}/edit-project/4`, { headers: { cookie: editCookie } })).text();
+  const editHtml = await (await adminFetch(`${baseUrl}/edit-project/4`, { headers: { cookie: editCookie } })).text();
   assert.match(editHtml, /A project with this title already exists for that organization\./);
 });
 
 test('edit project form is prepopulated with ISO date and current organization', async () => {
-  const response = await fetch(`${baseUrl}/edit-project/1`);
+  const response = await adminFetch(`${baseUrl}/edit-project/1`);
   const html = await response.text();
-  const detailHtml = await (await fetch(`${baseUrl}/project/1`)).text();
+  const detailHtml = await (await adminFetch(`${baseUrl}/project/1`)).text();
 
   assert.equal(response.status, 200);
   assert.match(html, /<input id="title" name="title"[^>]+value="Park Cleanup"/);
@@ -935,7 +1467,7 @@ test('valid project edits update fields and preserve existing category assignmen
   const initialAssignments = mockedProjectCategoryAssociations
     .filter(([projectId]) => projectId === 1)
     .map(([, categoryId]) => categoryId);
-  const response = await fetch(`${baseUrl}/edit-project/1`, {
+  const response = await adminFetch(`${baseUrl}/edit-project/1`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -968,13 +1500,13 @@ test('valid project edits update fields and preserve existing category assignmen
 
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
   const projectUrl = `${baseUrl}/project/1`;
-  assert.match(await (await fetch(projectUrl, { headers: { cookie } })).text(), /Service project updated successfully\./);
-  assert.doesNotMatch(await (await fetch(projectUrl, { headers: { cookie } })).text(), /Service project updated successfully\./);
+  assert.match(await (await adminFetch(projectUrl, { headers: { cookie } })).text(), /Service project updated successfully\./);
+  assert.doesNotMatch(await (await adminFetch(projectUrl, { headers: { cookie } })).text(), /Service project updated successfully\./);
 });
 
 test('invalid project edits redirect without updating', async () => {
   const initialUpdateCount = projectUpdateCount;
-  const response = await fetch(`${baseUrl}/edit-project/1`, {
+  const response = await adminFetch(`${baseUrl}/edit-project/1`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -991,14 +1523,14 @@ test('invalid project edits redirect without updating', async () => {
   assert.equal(response.headers.get('location'), '/edit-project/1');
   assert.equal(projectUpdateCount, initialUpdateCount);
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
-  const html = await (await fetch(`${baseUrl}/edit-project/1`, { headers: { cookie } })).text();
+  const html = await (await adminFetch(`${baseUrl}/edit-project/1`, { headers: { cookie } })).text();
   assert.match(html, /Project title must be between 3 and 150 characters\./);
   assert.match(html, /Enter a valid project date\./);
   assert.match(html, /Select an existing sponsoring organization\./);
 });
 
 test('category assignment form prechecks the project categories', async () => {
-  const response = await fetch(`${baseUrl}/assign-categories/4`);
+  const response = await adminFetch(`${baseUrl}/assign-categories/4`);
   const html = await response.text();
 
   assert.equal(response.status, 200);
@@ -1009,7 +1541,7 @@ test('category assignment form prechecks the project categories', async () => {
 });
 
 test('category assignments add, remove, deduplicate, flash once, and can be cleared', async () => {
-  const response = await fetch(`${baseUrl}/assign-categories/4`, {
+  const response = await adminFetch(`${baseUrl}/assign-categories/4`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams([['categoryIds', '1'], ['categoryIds', '2'], ['categoryIds', '2']]),
@@ -1024,14 +1556,14 @@ test('category assignments add, remove, deduplicate, flash once, and can be clea
   assert.ok(transactionEvents.includes('COMMIT'));
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
   const projectUrl = `${baseUrl}/project/4`;
-  const detailHtml = await (await fetch(projectUrl, { headers: { cookie } })).text();
+  const detailHtml = await (await adminFetch(projectUrl, { headers: { cookie } })).text();
   assert.match(detailHtml, /Project categories updated successfully\./);
   assert.match(detailHtml, /href="\/category\/1"/);
   assert.match(detailHtml, /href="\/category\/2"/);
   assert.doesNotMatch(detailHtml, /href="\/category\/3"/);
-  assert.doesNotMatch(await (await fetch(projectUrl, { headers: { cookie } })).text(), /Project categories updated successfully\./);
+  assert.doesNotMatch(await (await adminFetch(projectUrl, { headers: { cookie } })).text(), /Project categories updated successfully\./);
 
-  const clearResponse = await fetch(`${baseUrl}/assign-categories/4`, {
+  const clearResponse = await adminFetch(`${baseUrl}/assign-categories/4`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(),
@@ -1047,7 +1579,7 @@ test('invalid and nonexistent category IDs are rejected before assignment transa
   const transactionCount = transactionEvents.length;
 
   for (const submittedIds of [['0'], ['999'], ['not-an-id']]) {
-    const response = await fetch(`${baseUrl}/assign-categories/4`, {
+    const response = await adminFetch(`${baseUrl}/assign-categories/4`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(submittedIds.map((id) => ['categoryIds', id])),
@@ -1069,7 +1601,7 @@ test('failed category insertion rolls back the assignment replacement', async ()
   failCategoryAssignmentAt = 2;
 
   try {
-    const response = await fetch(`${baseUrl}/assign-categories/4`, {
+    const response = await adminFetch(`${baseUrl}/assign-categories/4`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams([['categoryIds', '1'], ['categoryIds', '2']]),
@@ -1177,7 +1709,7 @@ test('test error renders escaped debugging details only in development', async (
 });
 
 test('organizations page renders database organization names, descriptions, contacts, and logos', async () => {
-  const response = await fetch(`${baseUrl}/organizations`);
+  const response = await adminFetch(`${baseUrl}/organizations`);
   const html = await response.text();
 
   assert.match(html, /Here are a few of our partner organizations:/);
@@ -1195,7 +1727,7 @@ test('organizations page renders database organization names, descriptions, cont
 
 test('all organization detail pages render their five projects and required information', async () => {
   for (const organization of organizations) {
-    const response = await fetch(`${baseUrl}/organization/${organization.organizationId}`);
+    const response = await adminFetch(`${baseUrl}/organization/${organization.organizationId}`);
     const html = await response.text();
     const organizationProjects = projects.filter((project) => project.organizationId === organization.organizationId);
 
@@ -1213,7 +1745,7 @@ test('all organization detail pages render their five projects and required info
 });
 
 test('projects page renders only the five upcoming projects with working detail links', async () => {
-  const response = await fetch(`${baseUrl}/projects`);
+  const response = await adminFetch(`${baseUrl}/projects`);
   const html = await response.text();
 
   assert.match(html, /<h1>Upcoming Service Projects<\/h1>/);
@@ -1233,7 +1765,7 @@ test('all project detail pages display their category tags and link to organizat
   let renderedCategoryTagCount = 0;
 
   for (const project of projects) {
-    const response = await fetch(`${baseUrl}/project/${project.projectId}`);
+    const response = await adminFetch(`${baseUrl}/project/${project.projectId}`);
     const html = await response.text();
     const projectCategories = projectCategoryAssociations
       .filter(([projectId]) => projectId === project.projectId)
@@ -1259,7 +1791,7 @@ test('all project detail pages display their category tags and link to organizat
 
 test('invalid and nonexistent detail IDs return the custom not-found page', async () => {
   for (const route of ['/organization/0', '/organization/not-an-id', '/organization/999', '/edit-organization/0', '/edit-organization/not-an-id', '/edit-organization/999', '/project/1.5', '/project/999', '/edit-project/0', '/edit-project/not-an-id', '/edit-project/999', '/category/0', '/category/not-an-id', '/category/999', '/edit-category/0', '/edit-category/not-an-id', '/edit-category/999', '/assign-categories/0', '/assign-categories/not-an-id', '/assign-categories/999']) {
-    const response = await fetch(`${baseUrl}${route}`);
+    const response = await adminFetch(`${baseUrl}${route}`);
     const html = await response.text();
 
     assert.equal(response.status, 404, `${route} should return 404`);
@@ -1268,7 +1800,7 @@ test('invalid and nonexistent detail IDs return the custom not-found page', asyn
 });
 
 test('categories page contains exactly the four required category labels', async () => {
-  const response = await fetch(`${baseUrl}/categories`);
+  const response = await adminFetch(`${baseUrl}/categories`);
   const html = await response.text();
   const categorySection = html.match(/<section class="category-list[^\"]*"[\s\S]*?<\/section>/)?.[0] ?? '';
 
@@ -1283,7 +1815,7 @@ test('categories page contains exactly the four required category labels', async
 
 test('all category detail pages list every associated project and working project links', async () => {
   for (const category of categories) {
-    const response = await fetch(`${baseUrl}/category/${category.categoryId}`);
+    const response = await adminFetch(`${baseUrl}/category/${category.categoryId}`);
     const html = await response.text();
     const categoryProjects = projectCategoryAssociations
       .filter(([, categoryId]) => categoryId === category.categoryId)
@@ -1302,13 +1834,13 @@ test('all category detail pages list every associated project and working projec
 });
 
 test('category create and edit forms are linked, prepopulated, and have exact client-side constraints', async () => {
-  const categoriesPage = await fetch(`${baseUrl}/categories`);
+  const categoriesPage = await adminFetch(`${baseUrl}/categories`);
   const categoryListHtml = await categoriesPage.text();
-  const newFormResponse = await fetch(`${baseUrl}/new-category`);
+  const newFormResponse = await adminFetch(`${baseUrl}/new-category`);
   const newFormHtml = await newFormResponse.text();
-  const editFormResponse = await fetch(`${baseUrl}/edit-category/2`);
+  const editFormResponse = await adminFetch(`${baseUrl}/edit-category/2`);
   const editFormHtml = await editFormResponse.text();
-  const categoryDetailHtml = await (await fetch(`${baseUrl}/category/2`)).text();
+  const categoryDetailHtml = await (await adminFetch(`${baseUrl}/category/2`)).text();
 
   assert.equal(newFormResponse.status, 200);
   assert.equal(editFormResponse.status, 200);
@@ -1329,7 +1861,7 @@ test('category name validation rejects empty, whitespace, short, long, and non-s
     ['ab', 'Category name must be between 3 and 100 characters.'],
     ['c'.repeat(101), 'Category name must be between 3 and 100 characters.'],
   ]) {
-    const response = await fetch(`${baseUrl}/new-category`, {
+    const response = await adminFetch(`${baseUrl}/new-category`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ name }),
@@ -1340,14 +1872,14 @@ test('category name validation rejects empty, whitespace, short, long, and non-s
     assert.equal(response.headers.get('location'), '/new-category');
     assert.equal(createdCategories.length, initialCategoryCount);
     const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
-    const formHtml = await (await fetch(`${baseUrl}/new-category`, { headers: { cookie } })).text();
+    const formHtml = await (await adminFetch(`${baseUrl}/new-category`, { headers: { cookie } })).text();
     assert.ok(formHtml.includes(expectedMessage));
     if (name === 'ab') {
       assert.ok(formHtml.includes('value="ab"'));
     }
   }
 
-  const nonString = await fetch(`${baseUrl}/new-category`, {
+  const nonString = await adminFetch(`${baseUrl}/new-category`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name: { unexpected: true } }),
@@ -1358,7 +1890,7 @@ test('category name validation rejects empty, whitespace, short, long, and non-s
 });
 
 test('category creation uses parameterized INSERT, redirects, and flashes once', async () => {
-  const response = await fetch(`${baseUrl}/new-category`, {
+  const response = await adminFetch(`${baseUrl}/new-category`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ name: '  Community Health  ' }),
@@ -1375,15 +1907,15 @@ test('category creation uses parameterized INSERT, redirects, and flashes once',
 
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
   const detailUrl = `${baseUrl}${response.headers.get('location')}`;
-  const detailHtml = await (await fetch(detailUrl, { headers: { cookie } })).text();
+  const detailHtml = await (await adminFetch(detailUrl, { headers: { cookie } })).text();
   assert.match(detailHtml, /Category created successfully\./);
   assert.match(detailHtml, /<h1>Community Health<\/h1>/);
-  assert.doesNotMatch(await (await fetch(detailUrl, { headers: { cookie } })).text(), /Category created successfully\./);
+  assert.doesNotMatch(await (await adminFetch(detailUrl, { headers: { cookie } })).text(), /Category created successfully\./);
 });
 
 test('duplicate category creation is friendly and does not expose database details', async () => {
   const initialCategoryCount = createdCategories.length;
-  const response = await fetch(`${baseUrl}/new-category`, {
+  const response = await adminFetch(`${baseUrl}/new-category`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ name: 'Environmental' }),
@@ -1392,7 +1924,7 @@ test('duplicate category creation is friendly and does not expose database detai
 
   assert.equal(response.status, 302);
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
-  const html = await (await fetch(`${baseUrl}/new-category`, { headers: { cookie } })).text();
+  const html = await (await adminFetch(`${baseUrl}/new-category`, { headers: { cookie } })).text();
   assert.match(html, /A category with this name already exists\./);
   assert.doesNotMatch(html, /23505|Duplicate category name/);
   assert.equal(createdCategories.length, initialCategoryCount);
@@ -1400,7 +1932,7 @@ test('duplicate category creation is friendly and does not expose database detai
 
 test('category edit updates with parameterized SQL and preserves project relationships', async () => {
   const assignmentsBefore = mockedProjectCategoryAssociations.map((assignment) => [...assignment]);
-  const response = await fetch(`${baseUrl}/edit-category/3`, {
+  const response = await adminFetch(`${baseUrl}/edit-category/3`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ name: '  Community Service Plus  ' }),
@@ -1415,14 +1947,14 @@ test('category edit updates with parameterized SQL and preserves project relatio
   assert.deepEqual(lastCategoryUpdate.values, [3, 'Community Service Plus']);
   assert.deepEqual(mockedProjectCategoryAssociations, assignmentsBefore);
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
-  const detailHtml = await (await fetch(`${baseUrl}/category/3`, { headers: { cookie } })).text();
+  const detailHtml = await (await adminFetch(`${baseUrl}/category/3`, { headers: { cookie } })).text();
   assert.match(detailHtml, /Category updated successfully\./);
   assert.match(detailHtml, /<h1>Community Service Plus<\/h1>/);
-  assert.doesNotMatch(await (await fetch(`${baseUrl}/category/3`, { headers: { cookie } })).text(), /Category updated successfully\./);
+  assert.doesNotMatch(await (await adminFetch(`${baseUrl}/category/3`, { headers: { cookie } })).text(), /Category updated successfully\./);
 });
 
 test('duplicate category edit redirects with a safe message and does not update', async () => {
-  const response = await fetch(`${baseUrl}/edit-category/2`, {
+  const response = await adminFetch(`${baseUrl}/edit-category/2`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ name: 'Environmental' }),
@@ -1432,7 +1964,7 @@ test('duplicate category edit redirects with a safe message and does not update'
   assert.equal(response.status, 302);
   assert.equal(response.headers.get('location'), '/edit-category/2');
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
-  const html = await (await fetch(`${baseUrl}/edit-category/2`, { headers: { cookie } })).text();
+  const html = await (await adminFetch(`${baseUrl}/edit-category/2`, { headers: { cookie } })).text();
   assert.match(html, /A category with this name already exists\./);
   assert.doesNotMatch(html, /23505|Duplicate category name/);
 });
@@ -1452,6 +1984,8 @@ test('database models select required columns and join projects to organizations
   assert.equal(createCategory.constructor.name, 'AsyncFunction');
   assert.equal(updateCategory.constructor.name, 'AsyncFunction');
   assert.equal(getAllCategories.constructor.name, 'AsyncFunction');
+  assert.equal(createUser.constructor.name, 'AsyncFunction');
+  assert.equal(getAllUsers.constructor.name, 'AsyncFunction');
 
   const firstCall = queryMock.mock.calls.length;
   assert.deepEqual(await getAllOrganizations(), organizations);
@@ -1532,6 +2066,37 @@ test('database models select required columns and join projects to organizations
   assert.match(categoryWriteCalls[1].arguments[0], /RETURNING category_id/);
   assert.deepEqual(categoryWriteCalls[1].arguments[1], [1, 'Model Updated Category']);
   assert.equal(categoryWriteCalls[2].arguments[1][0], 999);
+
+  const listedUsers = await getAllUsers();
+  const expectedUsers = [...users, ...createdUsers]
+    .map((user) => ({
+      userId: user.userId,
+      name: user.name,
+      email: user.email,
+      roleName: roles.find((role) => role.roleId === user.roleId)?.roleName,
+    }))
+    .filter((user) => user.roleName)
+    .sort((firstUser, secondUser) => firstUser.name.localeCompare(secondUser.name)
+      || firstUser.userId - secondUser.userId);
+  const usersQuery = queryMock.mock.calls.at(-1).arguments[0];
+  assert.deepEqual(listedUsers, expectedUsers);
+  assert.match(usersQuery, /FROM users[\s\S]*INNER JOIN roles/);
+  assert.match(usersQuery, /ORDER BY users\.name, users\.user_id/);
+  assert.match(usersQuery, /user_id AS "userId"/);
+  assert.match(usersQuery, /role_name AS "roleName"/);
+  assert.doesNotMatch(usersQuery, /password_hash|passwordHash|SELECT\s+\*/i);
+  assert.deepEqual(Object.keys(listedUsers[0]), ['userId', 'name', 'email', 'roleName']);
+
+  const userWriteStart = queryMock.mock.calls.length;
+  const createdUserId = await createUser('Model User', 'modeluser@example.com', '$2b$10$hashedValue');
+  assert.ok(Number.isInteger(createdUserId));
+  const userWriteCalls = queryMock.mock.calls.slice(userWriteStart);
+  assert.match(userWriteCalls[0].arguments[0], /INSERT INTO users/);
+  assert.match(userWriteCalls[0].arguments[0], /SELECT \$1, \$2, \$3, roles\.role_id/);
+  assert.match(userWriteCalls[0].arguments[0], /FROM roles/);
+  assert.match(userWriteCalls[0].arguments[0], /WHERE roles\.role_name = 'user'/);
+  assert.match(userWriteCalls[0].arguments[0], /RETURNING user_id/);
+  assert.deepEqual(userWriteCalls[0].arguments[1], ['Model User', 'modeluser@example.com', '$2b$10$hashedValue']);
 });
 
 test('setup SQL defines required keys, relationships, and rerunnable sample data', async () => {
@@ -1553,11 +2118,27 @@ test('setup SQL defines required keys, relationships, and rerunnable sample data
   assert.match(setupSql, /PRIMARY KEY \(project_id, category_id\)/);
   assert.match(setupSql, /REFERENCES project \(project_id\)/);
   assert.match(setupSql, /REFERENCES category \(category_id\)/);
+  assert.match(setupSql, /CREATE TABLE IF NOT EXISTS roles/);
+  assert.match(setupSql, /role_id SERIAL PRIMARY KEY/);
+  assert.match(setupSql, /role_name VARCHAR\(50\) UNIQUE NOT NULL/);
+  assert.match(setupSql, /role_description TEXT/);
+  assert.match(setupSql, /CREATE TABLE IF NOT EXISTS users/);
+  assert.match(setupSql, /user_id SERIAL PRIMARY KEY/);
+  assert.match(setupSql, /name VARCHAR\(100\) NOT NULL/);
+  assert.match(setupSql, /email VARCHAR\(100\) UNIQUE NOT NULL/);
+  assert.match(setupSql, /password_hash VARCHAR\(255\) NOT NULL/);
+  assert.match(setupSql, /role_id INTEGER REFERENCES roles \(role_id\)/);
+  assert.match(setupSql, /created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP/);
+  assert.match(setupSql, /INSERT INTO roles/);
+  assert.match(setupSql, /\('user', 'Standard user with basic access'\)/);
+  assert.match(setupSql, /\('admin', 'Administrator with full system access'\)/);
+  assert.match(setupSql, /ON CONFLICT \(role_name\) DO UPDATE SET/);
   assert.match(setupSql, /ON CONFLICT \(organization_id, title\) DO UPDATE/);
   assert.match(setupSql, /ON CONFLICT \(project_id, category_id\) DO NOTHING/);
   assert.doesNotMatch(setupSql, /\bDROP\s+TABLE\b/i);
   assert.ok(setupSql.indexOf('CREATE TABLE IF NOT EXISTS organization') < setupSql.indexOf('CREATE TABLE IF NOT EXISTS project'));
   assert.ok(setupSql.indexOf('CREATE TABLE IF NOT EXISTS project') < setupSql.indexOf('CREATE TABLE IF NOT EXISTS project_category'));
+  assert.ok(setupSql.indexOf('CREATE TABLE IF NOT EXISTS roles') < setupSql.indexOf('CREATE TABLE IF NOT EXISTS users'));
   assert.equal((projectSeedSql.match(/DATE '\d{4}-\d{2}-\d{2}'/g) ?? []).length, 15);
   const seededProjectTitles = [
     'Community Center Access Ramp',
@@ -1587,6 +2168,21 @@ test('setup SQL defines required keys, relationships, and rerunnable sample data
     assert.ok(setupSql.includes(`('${category.name}')`));
   }
   assert.match(setupSql, /INSERT INTO project_category/);
+});
+
+test('additive roles/users migration is idempotent and non-destructive', async () => {
+  const migrationSql = await readFile(new URL('../src/migrations/20261124_add_roles_users.sql', import.meta.url), 'utf8');
+
+  assert.match(migrationSql, /BEGIN;/);
+  assert.match(migrationSql, /COMMIT;/);
+  assert.match(migrationSql, /CREATE TABLE IF NOT EXISTS roles/);
+  assert.match(migrationSql, /CREATE TABLE IF NOT EXISTS users/);
+  assert.match(migrationSql, /role_id INTEGER REFERENCES roles \(role_id\)/);
+  assert.match(migrationSql, /INSERT INTO roles/);
+  assert.match(migrationSql, /\('user', 'Standard user with basic access'\)/);
+  assert.match(migrationSql, /\('admin', 'Administrator with full system access'\)/);
+  assert.match(migrationSql, /ON CONFLICT \(role_name\) DO UPDATE SET/);
+  assert.doesNotMatch(migrationSql, /\bDROP\s+TABLE\b/i);
 });
 
 test('database pool defaults to strict TLS and strips pg-overriding sslmode parameters', () => {

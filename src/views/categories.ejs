@@ -3,7 +3,9 @@
   <p class="eyebrow">Start with what moves you</p>
   <h1><%= headingStart %> <span><%= headingEmphasis %></span></h1>
   <p>There are many ways to strengthen a community. Explore a category and find the kind of good you want to do.</p>
+  <% if (isAdmin) { %>
   <a class="button button-light" href="/new-category">Add New Category</a>
+  <% } %>
 </section>
 <section class="category-list content-width" aria-label="Service categories">
   <% categories.forEach((category, index) => { %>

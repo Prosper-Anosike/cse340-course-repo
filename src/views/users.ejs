@@ -1,0 +1,33 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">CSE 340 Service Network</p>
+  <h1>Registered <span>Users</span></h1>
+</section>
+<section class="content-width users-list" aria-label="Registered users">
+  <% if (users.length > 0) { %>
+  <div class="users-table-wrap" role="region" aria-label="Registered users" tabindex="0">
+    <table class="users-table">
+      <caption>Registered users and their roles</caption>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Email</th>
+          <th scope="col">Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% users.forEach((user) => { %>
+        <tr>
+          <td><%= user.name %></td>
+          <td><%= user.email %></td>
+          <td><%= user.roleName %></td>
+        </tr>
+        <% }); %>
+      </tbody>
+    </table>
+  </div>
+  <% } else { %>
+  <p>No registered users yet.</p>
+  <% } %>
+</section>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

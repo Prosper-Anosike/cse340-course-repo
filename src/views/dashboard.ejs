@@ -1,0 +1,18 @@
+<%- include('partials/header', { title, currentPath }) %>
+<section class="page-intro content-width">
+  <p class="eyebrow">CSE 340 Service Network</p>
+  <h1>My <span>Dashboard.</span></h1>
+</section>
+<section class="content-width">
+  <h2>Account details</h2>
+  <dl>
+    <dt>Name</dt>
+    <dd><%= currentUser.name %></dd>
+    <dt>Email</dt>
+    <dd><%= currentUser.email %></dd>
+  </dl>
+  <% if (isAdmin) { %>
+  <p><a class="button button-light" href="/users">View Registered Users</a></p>
+  <% } %>
+</section>
+<%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

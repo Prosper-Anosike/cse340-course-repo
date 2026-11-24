@@ -3,7 +3,9 @@
   <p class="eyebrow">Service Category</p>
   <h1><%= category.name %></h1>
   <p>Explore service projects connected to this category.</p>
+  <% if (isAdmin) { %>
   <a class="button button-light" href="/edit-category/<%= category.categoryId %>">Edit Category</a>
+  <% } %>
 </section>
 <section class="projects-list content-width" aria-label="Projects in this category">
   <h2>Service projects</h2>

@@ -5,6 +5,9 @@
     <h1><%= heading %></h1>
     <p class="hero-intro">Our mission is to promote service across the world by connecting volunteers with service opportunities in their community.</p>
     <a class="button button-light" href="/projects">Explore service projects <span aria-hidden="true">&rarr;</span></a>
+    <% if (isLoggedIn) { %>
+    <a class="button button-light" href="/dashboard">My Dashboard</a>
+    <% } %>
   </div>
   <div class="hero-image"><img src="/images/cse340-service-network.png" alt="CSE 340 Service Network" width="340" height="131"></div>
 </section>

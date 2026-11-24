@@ -93,6 +93,13 @@ h1, h2, h3 { font-family: "Manrope", "Avenir Next", sans-serif; letter-spacing: 
 .card-copy h2, .project-info h2 { margin-bottom: .7rem; font-size: 1.4rem; }
 .card-copy > p:not(.card-kicker) { min-height: 5.2rem; margin-bottom: 1.15rem; color: var(--muted); font-size: .91rem; }
 .projects-list { padding-bottom: 7rem; }
+.users-list { padding-bottom: 7rem; }
+.users-table-wrap { overflow-x: auto; background: white; }
+.users-table-wrap:focus-visible { outline: 3px solid var(--coral); outline-offset: 3px; }
+.users-table { width: 100%; border-collapse: collapse; text-align: left; }
+.users-table caption { padding: .8rem 1rem; color: var(--muted); font-weight: 600; text-align: left; }
+.users-table th, .users-table td { padding: .9rem 1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.users-table th { background: var(--green-soft); color: var(--green-dark); font-family: "Manrope", sans-serif; font-size: .9rem; }
 .project-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 1.5rem; padding: 2rem 0; border-top: 1px solid var(--line); }
 .project-row:last-child { border-bottom: 1px solid var(--line); }
 .project-number, .category-number { color: var(--muted); font-family: "Manrope", sans-serif; font-size: 1.1rem; font-weight: 700; }

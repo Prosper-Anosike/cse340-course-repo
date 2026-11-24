@@ -5,7 +5,9 @@
   <img src="/images/<%= organization.logoFilename %>" alt="<%= organization.name %> logo" width="180" height="180">
   <p><%= organization.description %></p>
   <p>Contact: <a href="mailto:<%= organization.contactEmail %>"><%= organization.contactEmail %></a></p>
+  <% if (isAdmin) { %>
   <a class="button button-light" href="/edit-organization/<%= organization.organizationId %>">Edit Organization</a>
+  <% } %>
 </section>
 <section class="projects-list content-width" aria-label="Organization service projects">
   <h2>Service projects</h2>
