@@ -6,7 +6,19 @@ import { after, before, mock, test } from 'node:test';
 import { createPoolConfig, createTransactionRunner, database, testConnection } from '../src/models/db.js';
 import { createCategory, getAllCategories, getCategoriesByProjectId, getCategoryDetails, updateCategory, updateCategoryAssignments } from '../src/models/categories.js';
 import { createOrganization, getAllOrganizations, getOrganizationDetails, updateOrganization } from '../src/models/organizations.js';
-import { createProject, getAllProjects, getProjectDetails, getProjectsByCategoryId, getProjectsByOrganizationId, getUpcomingProjects, updateProject } from '../src/models/projects.js';
+import {
+  addVolunteerToProject,
+  createProject,
+  getAllProjects,
+  getProjectDetails,
+  getProjectsByCategoryId,
+  getProjectsVolunteeredByUser,
+  getProjectsByOrganizationId,
+  getUpcomingProjects,
+  isUserVolunteeringForProject,
+  removeVolunteerFromProject,
+  updateProject,
+} from '../src/models/projects.js';
 import { authenticateUser, createUser, findUserByEmail, getAllUsers, verifyPassword } from '../src/models/users.js';
 import { createSessionMiddleware } from '../src/middleware/session.js';
 
@@ -261,6 +273,7 @@ const projectCategoryAssociations = [
 ];
 
 let mockedProjectCategoryAssociations = projectCategoryAssociations.map((association) => [...association]);
+let mockedVolunteerAssociations = [[1, 4], [1, 15]];
 
 const mockedQuery = async (statement, values = []) => {
   if (failDatabaseQueries) {
@@ -307,7 +320,8 @@ const mockedQuery = async (statement, values = []) => {
     return { rows: organization ? [{ organizationId: organization.organizationId }] : [] };
   }
 
-  if (normalizedStatement.includes('insert into project')) {
+  if (normalizedStatement.includes('insert into project')
+      && !normalizedStatement.includes('project_volunteer')) {
     lastProjectInsert = { statement, values };
     if ([...projects, ...createdProjects].some((project) => (
       project.organizationId === values[4] && project.title === values[0]
@@ -452,6 +466,60 @@ const mockedQuery = async (statement, values = []) => {
         roleDescription: role?.roleDescription,
       }],
     };
+  }
+
+  if (normalizedStatement.includes('insert into project_volunteer')) {
+    const [userId, projectId] = values;
+    if (mockedVolunteerAssociations.some(([existingUserId, existingProjectId]) => (
+      existingUserId === userId && existingProjectId === projectId
+    ))) {
+      return { rows: [] };
+    }
+    mockedVolunteerAssociations.push([userId, projectId]);
+    return { rows: [{ userId }] };
+  }
+
+  if (normalizedStatement.includes('delete from project_volunteer')) {
+    const [userId, projectId] = values;
+    const existingIndex = mockedVolunteerAssociations.findIndex(([existingUserId, existingProjectId]) => (
+      existingUserId === userId && existingProjectId === projectId
+    ));
+    if (existingIndex === -1) {
+      return { rows: [] };
+    }
+    mockedVolunteerAssociations.splice(existingIndex, 1);
+    return { rows: [{ userId }] };
+  }
+
+  if (normalizedStatement.includes('select exists')
+      && normalizedStatement.includes('from project_volunteer')) {
+    const [userId, projectId] = values;
+    const isVolunteering = mockedVolunteerAssociations.some(([existingUserId, existingProjectId]) => (
+      existingUserId === userId && existingProjectId === projectId
+    ));
+    return { rows: [{ isVolunteering }] };
+  }
+
+  if (normalizedStatement.includes('from project_volunteer')
+      && normalizedStatement.includes('inner join project')) {
+    const [userId] = values;
+    const volunteeredProjectIds = new Set(mockedVolunteerAssociations
+      .filter(([existingUserId]) => existingUserId === userId)
+      .map(([, projectId]) => projectId));
+    const volunteeredProjects = projects
+      .filter((project) => volunteeredProjectIds.has(project.projectId))
+      .sort((firstProject, secondProject) => (
+        Date.parse(firstProject.projectDate) - Date.parse(secondProject.projectDate)
+        || firstProject.projectId - secondProject.projectId
+      ))
+      .map((project) => ({
+        projectId: project.projectId,
+        title: project.title,
+        projectDate: project.projectDate,
+        location: project.location,
+        organizationName: project.organizationName,
+      }));
+    return { rows: volunteeredProjects };
   }
 
   if (normalizedStatement.includes('from project')) {
@@ -1789,6 +1857,217 @@ test('all project detail pages display their category tags and link to organizat
   assert.equal(renderedCategoryTagCount, 25);
 });
 
+test('dashboard lists only the current user projects and refreshes after dashboard removal', async () => {
+  mockedVolunteerAssociations = [[1, 4], [1, 15], [2, 1], [2, 5]];
+
+  const regularLogin = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+  const regularCookie = regularLogin.headers.get('set-cookie')?.split(';', 1)[0];
+
+  const regularDashboard = await (await fetch(`${baseUrl}/dashboard`, { headers: { cookie: regularCookie } })).text();
+  assert.match(regularDashboard, /My <span>Volunteering<\/span>|My Volunteering/);
+  assert.match(regularDashboard, /Community Center Access Ramp/);
+  assert.match(regularDashboard, /Senior Center Meal Delivery/);
+  assert.doesNotMatch(regularDashboard, /Park Cleanup|Community Garden Planting Day/);
+  assert.match(regularDashboard, /href="\/project\/4"/);
+  assert.match(regularDashboard, /href="\/project\/15"/);
+  assert.equal((regularDashboard.match(/Remove My Volunteering/g) ?? []).length, 2);
+  assert.doesNotMatch(regularDashboard, /View Registered Users/);
+
+  const removeResponse = await fetch(`${baseUrl}/dashboard/unvolunteer/15`, {
+    method: 'POST',
+    headers: { cookie: regularCookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ userId: '2', redirect: 'https://attacker.example/' }),
+    redirect: 'manual',
+  });
+  assert.equal(removeResponse.status, 302);
+  assert.equal(removeResponse.headers.get('location'), '/dashboard');
+  assert.equal(await isUserVolunteeringForProject(1, 15), false);
+  assert.equal(await isUserVolunteeringForProject(2, 1), true);
+  assert.equal(await isUserVolunteeringForProject(2, 5), true);
+
+  const removalCookie = removeResponse.headers.get('set-cookie')?.split(';', 1)[0];
+  const refreshedDashboard = await (await fetch(`${baseUrl}/dashboard`, { headers: { cookie: removalCookie } })).text();
+  assert.doesNotMatch(refreshedDashboard, /Senior Center Meal Delivery/);
+  assert.match(refreshedDashboard, /Community Center Access Ramp/);
+  assert.match(refreshedDashboard, /Your volunteering has been removed\./);
+
+  const repeatedResponse = await fetch(`${baseUrl}/dashboard/unvolunteer/15`, {
+    method: 'POST',
+    headers: { cookie: regularCookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ userId: '2' }),
+    redirect: 'manual',
+  });
+  assert.equal(repeatedResponse.status, 302);
+  assert.equal(repeatedResponse.headers.get('location'), '/dashboard');
+
+  const invalidResponse = await fetch(`${baseUrl}/dashboard/unvolunteer/not-an-id`, {
+    method: 'POST',
+    headers: { cookie: regularCookie, 'content-type': 'application/x-www-form-urlencoded' },
+    redirect: 'manual',
+  });
+  assert.equal(invalidResponse.status, 302);
+  assert.equal(invalidResponse.headers.get('location'), '/dashboard');
+
+  const anonymousResponse = await fetch(`${baseUrl}/dashboard/unvolunteer/4`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    redirect: 'manual',
+  });
+  assert.equal(anonymousResponse.status, 302);
+  assert.equal(anonymousResponse.headers.get('location'), '/login');
+
+  const adminDashboard = await (await adminFetch(`${baseUrl}/dashboard`)).text();
+  assert.match(adminDashboard, /View Registered Users/);
+
+  mockedVolunteerAssociations = [[1, 4], [1, 15]];
+});
+
+test('dashboard shows a friendly empty state when there are no volunteer registrations', async () => {
+  mockedVolunteerAssociations = [];
+
+  const regularLogin = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+  const regularCookie = regularLogin.headers.get('set-cookie')?.split(';', 1)[0];
+  const dashboardHtml = await (await fetch(`${baseUrl}/dashboard`, { headers: { cookie: regularCookie } })).text();
+  assert.match(dashboardHtml, /You are not currently volunteering for any projects\./);
+  assert.match(dashboardHtml, /href="\/projects">Browse service projects/);
+  assert.doesNotMatch(dashboardHtml, /Remove My Volunteering/);
+
+  mockedVolunteerAssociations = [[1, 4], [1, 15]];
+});
+
+test('project volunteering controls reflect anonymous, regular, and admin session state', async () => {
+  mockedVolunteerAssociations = [[1, 4], [1, 15]];
+
+  const anonymousHtml = await (await fetch(`${baseUrl}/project/1`)).text();
+  assert.doesNotMatch(anonymousHtml, /Volunteer for This Project|Remove My Volunteering|You are volunteering/);
+
+  const anonymousSignup = await fetch(`${baseUrl}/project/1/volunteer`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ userId: '2' }),
+    redirect: 'manual',
+  });
+  assert.equal(anonymousSignup.status, 302);
+  assert.equal(anonymousSignup.headers.get('location'), '/login');
+  assert.equal(await isUserVolunteeringForProject(2, 1), false);
+
+  const regularLogin = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+  const regularCookie = regularLogin.headers.get('set-cookie')?.split(';', 1)[0];
+
+  const regularBeforeHtml = await (await fetch(`${baseUrl}/project/1`, { headers: { cookie: regularCookie } })).text();
+  assert.match(regularBeforeHtml, /Volunteer for This Project/);
+  assert.doesNotMatch(regularBeforeHtml, /You are volunteering|Remove My Volunteering/);
+
+  const regularSignup = await fetch(`${baseUrl}/project/1/volunteer`, {
+    method: 'POST',
+    headers: { cookie: regularCookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ userId: '2' }),
+    redirect: 'manual',
+  });
+  assert.equal(regularSignup.status, 302);
+  assert.equal(regularSignup.headers.get('location'), '/project/1');
+  assert.equal(await isUserVolunteeringForProject(1, 1), true);
+
+  const duplicateSignup = await fetch(`${baseUrl}/project/1/volunteer`, {
+    method: 'POST',
+    headers: { cookie: regularCookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ userId: '2' }),
+    redirect: 'manual',
+  });
+  assert.equal(duplicateSignup.status, 302);
+  const duplicateCookie = duplicateSignup.headers.get('set-cookie')?.split(';', 1)[0];
+  const duplicateHtml = await (await fetch(`${baseUrl}/project/1`, { headers: { cookie: duplicateCookie } })).text();
+  assert.match(duplicateHtml, /You are already volunteering for this project\./);
+
+  const regularAfterHtml = await (await fetch(`${baseUrl}/project/1`, { headers: { cookie: regularCookie } })).text();
+  assert.match(regularAfterHtml, /You are volunteering for this project/);
+  assert.match(regularAfterHtml, /Remove My Volunteering/);
+  assert.doesNotMatch(regularAfterHtml, /Volunteer for This Project/);
+
+  const regularRemoval = await fetch(`${baseUrl}/project/1/unvolunteer`, {
+    method: 'POST',
+    headers: { cookie: regularCookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ userId: '2' }),
+    redirect: 'manual',
+  });
+  assert.equal(regularRemoval.status, 302);
+  assert.equal(await isUserVolunteeringForProject(1, 1), false);
+
+  const repeatedRemoval = await fetch(`${baseUrl}/project/1/unvolunteer`, {
+    method: 'POST',
+    headers: { cookie: regularCookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ userId: '2' }),
+    redirect: 'manual',
+  });
+  assert.equal(repeatedRemoval.status, 302);
+  const repeatedCookie = repeatedRemoval.headers.get('set-cookie')?.split(';', 1)[0];
+  const repeatedHtml = await (await fetch(`${baseUrl}/project/1`, { headers: { cookie: repeatedCookie } })).text();
+  assert.match(repeatedHtml, /You are not currently volunteering for this project\./);
+
+  const adminBeforeHtml = await (await adminFetch(`${baseUrl}/project/1`)).text();
+  assert.match(adminBeforeHtml, /Volunteer for This Project/);
+  const adminSignup = await adminFetch(`${baseUrl}/project/1/volunteer`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ userId: '1', role: 'admin' }),
+    redirect: 'manual',
+  });
+  assert.equal(adminSignup.status, 302);
+  assert.equal(adminSignup.headers.get('location'), '/project/1');
+  assert.equal(await isUserVolunteeringForProject(2, 1), true);
+  assert.equal(await isUserVolunteeringForProject(1, 1), false);
+
+  mockedVolunteerAssociations = [[1, 4], [1, 15]];
+});
+
+test('volunteer POST routes reject invalid and nonexistent projects', async () => {
+  for (const route of ['/project/0/volunteer', '/project/not-an-id/unvolunteer', '/project/999/volunteer']) {
+    const response = await fetch(`${baseUrl}${route}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ userId: '2' }),
+      redirect: 'manual',
+    });
+
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('location'), '/login');
+  }
+
+  const regularLogin = await fetch(`${baseUrl}/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'existing@example.com', password: 'correct-password' }),
+    redirect: 'manual',
+  });
+  const regularCookie = regularLogin.headers.get('set-cookie')?.split(';', 1)[0];
+
+  for (const route of ['/project/0/volunteer', '/project/not-an-id/unvolunteer', '/project/999/volunteer']) {
+    const response = await fetch(`${baseUrl}${route}`, {
+      method: 'POST',
+      headers: { cookie: regularCookie, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ userId: '2' }),
+      redirect: 'manual',
+    });
+
+    assert.equal(response.status, 404);
+  }
+});
+
 test('invalid and nonexistent detail IDs return the custom not-found page', async () => {
   for (const route of ['/organization/0', '/organization/not-an-id', '/organization/999', '/edit-organization/0', '/edit-organization/not-an-id', '/edit-organization/999', '/project/1.5', '/project/999', '/edit-project/0', '/edit-project/not-an-id', '/edit-project/999', '/category/0', '/category/not-an-id', '/category/999', '/edit-category/0', '/edit-category/not-an-id', '/edit-category/999', '/assign-categories/0', '/assign-categories/not-an-id', '/assign-categories/999']) {
     const response = await adminFetch(`${baseUrl}${route}`);
@@ -1986,6 +2265,10 @@ test('database models select required columns and join projects to organizations
   assert.equal(getAllCategories.constructor.name, 'AsyncFunction');
   assert.equal(createUser.constructor.name, 'AsyncFunction');
   assert.equal(getAllUsers.constructor.name, 'AsyncFunction');
+  assert.equal(addVolunteerToProject.constructor.name, 'AsyncFunction');
+  assert.equal(removeVolunteerFromProject.constructor.name, 'AsyncFunction');
+  assert.equal(getProjectsVolunteeredByUser.constructor.name, 'AsyncFunction');
+  assert.equal(isUserVolunteeringForProject.constructor.name, 'AsyncFunction');
 
   const firstCall = queryMock.mock.calls.length;
   assert.deepEqual(await getAllOrganizations(), organizations);
@@ -2097,6 +2380,60 @@ test('database models select required columns and join projects to organizations
   assert.match(userWriteCalls[0].arguments[0], /WHERE roles\.role_name = 'user'/);
   assert.match(userWriteCalls[0].arguments[0], /RETURNING user_id/);
   assert.deepEqual(userWriteCalls[0].arguments[1], ['Model User', 'modeluser@example.com', '$2b$10$hashedValue']);
+
+  const volunteerWriteStart = queryMock.mock.calls.length;
+  assert.equal(await addVolunteerToProject(2, 1), true);
+  assert.equal(await addVolunteerToProject(2, 1), false);
+  assert.equal(await isUserVolunteeringForProject(2, 1), true);
+  const volunteeredProjects = await getProjectsVolunteeredByUser(2);
+  assert.equal(volunteeredProjects.length, 1);
+  assert.deepEqual(volunteeredProjects[0], {
+    projectId: 1,
+    title: 'Park Cleanup',
+    projectDate: 'December 7, 2026',
+    location: 'Riverside Park',
+    organizationName: 'UnityServe Volunteers',
+  });
+  assert.equal(await removeVolunteerFromProject(2, 999), false);
+  assert.equal(await removeVolunteerFromProject(2, 1), true);
+  assert.equal(await isUserVolunteeringForProject(2, 1), false);
+
+  const volunteerCalls = queryMock.mock.calls.slice(volunteerWriteStart);
+  assert.match(volunteerCalls[0].arguments[0], /INSERT INTO project_volunteer/);
+  assert.match(volunteerCalls[0].arguments[0], /VALUES \(\$1, \$2\)/);
+  assert.match(volunteerCalls[0].arguments[0], /ON CONFLICT \(user_id, project_id\) DO NOTHING/);
+  assert.deepEqual(volunteerCalls[0].arguments[1], [2, 1]);
+  assert.match(volunteerCalls[2].arguments[0], /SELECT EXISTS/);
+  assert.match(volunteerCalls[2].arguments[0], /FROM project_volunteer/);
+  assert.deepEqual(volunteerCalls[2].arguments[1], [2, 1]);
+  assert.match(volunteerCalls[3].arguments[0], /FROM project_volunteer/);
+  assert.match(volunteerCalls[3].arguments[0], /INNER JOIN project/);
+  assert.match(volunteerCalls[3].arguments[0], /ORDER BY project\.project_date ASC, project\.project_id ASC/);
+  assert.deepEqual(volunteerCalls[3].arguments[1], [2]);
+  assert.match(volunteerCalls[4].arguments[0], /DELETE FROM project_volunteer/);
+  assert.match(volunteerCalls[4].arguments[0], /WHERE user_id = \$1/);
+  assert.match(volunteerCalls[4].arguments[0], /AND project_id = \$2/);
+  assert.deepEqual(volunteerCalls[4].arguments[1], [2, 999]);
+  assert.deepEqual(volunteerCalls[5].arguments[1], [2, 1]);
+});
+
+test('project volunteer registration is parameterized, duplicate-safe, removable, and scoped', async () => {
+  mockedVolunteerAssociations = [[1, 4], [1, 15]];
+
+  assert.equal(await addVolunteerToProject(1, 4), false);
+  assert.equal(await isUserVolunteeringForProject(1, 4), true);
+  assert.equal(await addVolunteerToProject(2, 5), true);
+  assert.equal(await isUserVolunteeringForProject(2, 5), true);
+  assert.equal(await removeVolunteerFromProject(1, 5), false);
+  assert.equal(await isUserVolunteeringForProject(1, 5), false);
+  assert.equal(await removeVolunteerFromProject(2, 5), true);
+  assert.equal(await isUserVolunteeringForProject(2, 5), false);
+
+  const projectsForUserOne = await getProjectsVolunteeredByUser(1);
+  assert.deepEqual(projectsForUserOne.map((project) => project.projectId), [4, 15]);
+  assert.equal(projectsForUserOne.every((project) => (
+    project.projectId && project.title && project.projectDate && project.location && project.organizationName
+  )), true);
 });
 
 test('setup SQL defines required keys, relationships, and rerunnable sample data', async () => {
@@ -2133,6 +2470,12 @@ test('setup SQL defines required keys, relationships, and rerunnable sample data
   assert.match(setupSql, /\('user', 'Standard user with basic access'\)/);
   assert.match(setupSql, /\('admin', 'Administrator with full system access'\)/);
   assert.match(setupSql, /ON CONFLICT \(role_name\) DO UPDATE SET/);
+  assert.match(setupSql, /CREATE TABLE IF NOT EXISTS project_volunteer/);
+  assert.match(setupSql, /user_id INTEGER NOT NULL\s+REFERENCES users \(user_id\) ON UPDATE CASCADE ON DELETE CASCADE/);
+  assert.match(setupSql, /project_id INTEGER NOT NULL\s+REFERENCES project \(project_id\) ON UPDATE CASCADE ON DELETE CASCADE/);
+  assert.match(setupSql, /PRIMARY KEY \(user_id, project_id\)/);
+  assert.match(setupSql, /CREATE INDEX IF NOT EXISTS project_volunteer_project_id_idx/);
+  assert.match(setupSql, /ON project_volunteer \(project_id\)/);
   assert.match(setupSql, /ON CONFLICT \(organization_id, title\) DO UPDATE/);
   assert.match(setupSql, /ON CONFLICT \(project_id, category_id\) DO NOTHING/);
   assert.doesNotMatch(setupSql, /\bDROP\s+TABLE\b/i);
@@ -2183,6 +2526,20 @@ test('additive roles/users migration is idempotent and non-destructive', async (
   assert.match(migrationSql, /\('admin', 'Administrator with full system access'\)/);
   assert.match(migrationSql, /ON CONFLICT \(role_name\) DO UPDATE SET/);
   assert.doesNotMatch(migrationSql, /\bDROP\s+TABLE\b/i);
+});
+
+test('additive project volunteer migration is repeatable and non-destructive', async () => {
+  const migrationSql = await readFile(new URL('../src/migrations/20261126_add_project_volunteer.sql', import.meta.url), 'utf8');
+
+  assert.match(migrationSql, /BEGIN;/);
+  assert.match(migrationSql, /COMMIT;/);
+  assert.match(migrationSql, /CREATE TABLE IF NOT EXISTS project_volunteer/);
+  assert.match(migrationSql, /user_id INTEGER NOT NULL\s+REFERENCES users \(user_id\) ON UPDATE CASCADE ON DELETE CASCADE/);
+  assert.match(migrationSql, /project_id INTEGER NOT NULL\s+REFERENCES project \(project_id\) ON UPDATE CASCADE ON DELETE CASCADE/);
+  assert.match(migrationSql, /PRIMARY KEY \(user_id, project_id\)/);
+  assert.match(migrationSql, /CREATE INDEX IF NOT EXISTS project_volunteer_project_id_idx/);
+  assert.match(migrationSql, /ON project_volunteer \(project_id\)/);
+  assert.doesNotMatch(migrationSql, /\b(DROP\s+TABLE|TRUNCATE|DELETE\s+FROM)\b/i);
 });
 
 test('database pool defaults to strict TLS and strips pg-overriding sslmode parameters', () => {

@@ -2,7 +2,15 @@ import { body, matchedData, validationResult } from 'express-validator';
 import { getAllOrganizations, getOrganizationDetails } from '../models/organizations.js';
 import { safeDatabaseErrorCode } from '../models/db.js';
 import { getCategoriesByProjectId } from '../models/categories.js';
-import { createProject, getProjectDetails, getUpcomingProjects, updateProject } from '../models/projects.js';
+import {
+  addVolunteerToProject,
+  createProject,
+  getProjectDetails,
+  getUpcomingProjects,
+  isUserVolunteeringForProject,
+  removeVolunteerFromProject,
+  updateProject,
+} from '../models/projects.js';
 
 const NUMBER_OF_UPCOMING_PROJECTS = 5;
 
@@ -214,11 +222,18 @@ const showProjectDetailsPage = async (request, response) => {
     }
 
     const categories = await getCategoriesByProjectId(projectId);
+    let isVolunteering = false;
+
+    if (request.session?.user?.userId) {
+      isVolunteering = await isUserVolunteeringForProject(request.session.user.userId, projectId);
+    }
+
     response.render('project', {
       title: project.title,
       currentPath: '/projects',
       project,
       categories,
+      isVolunteering,
     });
   } catch (error) {
     console.error(`Unable to load project details (${safeDatabaseErrorCode(error)}). Verify DB_URL and database availability.`);
@@ -226,9 +241,73 @@ const showProjectDetailsPage = async (request, response) => {
   }
 };
 
+const processVolunteerSignup = async (request, response) => {
+  const projectId = getPositiveId(request.params.id);
+
+  if (projectId === null) {
+    return showNotFoundPage(request, response);
+  }
+
+  const userId = request.session.user?.userId;
+
+  try {
+    const project = await getProjectDetails(projectId);
+
+    if (!project) {
+      return showNotFoundPage(request, response);
+    }
+
+    const added = await addVolunteerToProject(userId, projectId);
+
+    if (!added) {
+      request.flash('error', 'You are already volunteering for this project.');
+      return response.redirect(`/project/${projectId}`);
+    }
+
+    request.flash('success', 'You are now volunteering for this project.');
+    response.redirect(`/project/${projectId}`);
+  } catch (error) {
+    console.error(`Unable to register volunteer (${safeDatabaseErrorCode(error)}). Verify database availability.`);
+    response.status(503).send('Service data is temporarily unavailable.');
+  }
+};
+
+const processVolunteerRemoval = async (request, response) => {
+  const projectId = getPositiveId(request.params.id);
+
+  if (projectId === null) {
+    return showNotFoundPage(request, response);
+  }
+
+  const userId = request.session.user?.userId;
+
+  try {
+    const project = await getProjectDetails(projectId);
+
+    if (!project) {
+      return showNotFoundPage(request, response);
+    }
+
+    const removed = await removeVolunteerFromProject(userId, projectId);
+
+    if (!removed) {
+      request.flash('error', 'You are not currently volunteering for this project.');
+      return response.redirect(`/project/${projectId}`);
+    }
+
+    request.flash('success', 'Your volunteering has been removed.');
+    response.redirect(`/project/${projectId}`);
+  } catch (error) {
+    console.error(`Unable to remove volunteer (${safeDatabaseErrorCode(error)}). Verify database availability.`);
+    response.status(503).send('Service data is temporarily unavailable.');
+  }
+};
+
 export {
   processEditProjectForm,
   processNewProjectForm,
+  processVolunteerRemoval,
+  processVolunteerSignup,
   projectValidation,
   showEditProjectForm,
   showNewProjectForm,

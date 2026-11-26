@@ -15,4 +15,27 @@
   <p><a class="button button-light" href="/users">View Registered Users</a></p>
   <% } %>
 </section>
+<section class="content-width volunteering-list" aria-labelledby="volunteering-heading">
+  <h2 id="volunteering-heading">My Volunteering</h2>
+  <% if (volunteeredProjects.length > 0) { %>
+  <div class="volunteering-items">
+    <% volunteeredProjects.forEach((project) => { %>
+    <article class="volunteering-item">
+      <div>
+        <h3><a href="/project/<%= project.projectId %>"><%= project.title %></a></h3>
+        <p><%= project.projectDate %></p>
+        <p><%= project.location %></p>
+        <p><%= project.organizationName %></p>
+      </div>
+      <form action="/dashboard/unvolunteer/<%= project.projectId %>" method="post">
+        <button class="button button-light" type="submit">Remove My Volunteering</button>
+      </form>
+    </article>
+    <% }); %>
+  </div>
+  <% } else { %>
+  <p>You are not currently volunteering for any projects.</p>
+  <p><a class="text-link" href="/projects">Browse service projects</a></p>
+  <% } %>
+</section>
 <%- include('partials/footer', { currentYear: new Date().getFullYear() }) %>

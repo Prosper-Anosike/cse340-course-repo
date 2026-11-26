@@ -101,9 +101,17 @@ Week 05 adds user registration and login with bcrypt password hashes, session re
 
 Administrators can view the protected Registered Users page, which lists account names, email addresses, and roles without selecting or displaying password hashes. The `roles` and `users` tables are defined in [`src/setup.sql`](src/setup.sql), with an additive migration at [`src/migrations/20261124_add_roles_users.sql`](src/migrations/20261124_add_roles_users.sql) for existing databases. Apply the migration before using registration, login, or the users page against an existing database. It has not been executed as part of this work.
 
+## Week 06 — Project Volunteering
+
+Week 06 adds many-to-many volunteering relationships between registered users and service projects. Authenticated users can volunteer for or remove their registration from a project through POST requests on the project details page. Volunteers can also manage all of their registrations from the protected dashboard.
+
+The `project_volunteer` junction table uses a composite primary key and cascades deletion from both users and projects. Its additive migration is [`src/migrations/20261126_add_project_volunteer.sql`](src/migrations/20261126_add_project_volunteer.sql), and the table definition is also included in [`src/setup.sql`](src/setup.sql).
+
+Volunteering routes are protected with `requireLogin` and never accept a user ID or role from form or query parameters; the authenticated session supplies the current user's ID. Anonymous visitors see no volunteering controls, duplicate signups are harmless, repeated removals are safe, and users cannot modify another user's volunteer registrations.
+
 ## Database Structure
 
-The PostgreSQL database contains six tables that work together to organize the application's information.
+The PostgreSQL database contains seven tables that work together to organize the application's information.
 
 | Table              | Description                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -113,6 +121,7 @@ The PostgreSQL database contains six tables that work together to organize the a
 | `project_category` | Connects projects to their categories.                                                                 |
 | `roles`            | Defines user roles, including standard users and administrators.                                        |
 | `users`            | Stores account names, email addresses, password hashes, and role references.                            |
+| `project_volunteer` | Connects users to projects for which they volunteer.                                                   |
 
 ### Database Relationships
 
@@ -123,6 +132,8 @@ The database uses three main relationships:
 **Many-to-Many:** A service project can belong to multiple categories, and each category can contain multiple projects. The `project_category` table manages this relationship.
 
 **User Roles:** Each user references a role in the `roles` table; the application uses the authenticated session role for authorization.
+
+**Volunteering:** Each volunteer registration is stored in `project_volunteer` using the user's and project's IDs. The composite key prevents duplicate registrations, and cascade deletes remove registrations when a user or project is deleted.
 
 Primary and foreign keys are used to maintain these relationships and protect the consistency of the data.
 

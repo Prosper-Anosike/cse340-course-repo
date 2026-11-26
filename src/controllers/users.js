@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import { body, matchedData, validationResult } from 'express-validator';
 import { safeDatabaseErrorCode } from '../models/db.js';
 import { authenticateUser, createUser, getAllUsers } from '../models/users.js';
+import { getProjectsVolunteeredByUser, removeVolunteerFromProject } from '../models/projects.js';
 
 const SALT_ROUNDS = 10;
 
@@ -127,11 +128,49 @@ const requireRole = (roleName) => (request, response, next) => {
   next();
 };
 
-const showDashboard = (_request, response) => {
-  response.render('dashboard', {
-    title: 'My Dashboard',
-    currentPath: '/dashboard',
-  });
+const showDashboard = async (request, response) => {
+  const userId = request.session.user?.userId;
+
+  try {
+    const volunteeredProjects = await getProjectsVolunteeredByUser(userId);
+    response.render('dashboard', {
+      title: 'My Dashboard',
+      currentPath: '/dashboard',
+      volunteeredProjects,
+    });
+  } catch (error) {
+    console.error(`Unable to load dashboard volunteering (${safeDatabaseErrorCode(error)}). Verify DB_URL and database availability.`);
+    response.status(503).send('Service data is temporarily unavailable.');
+  }
+};
+
+const processDashboardVolunteerRemoval = async (request, response) => {
+  const rawProjectId = request.params.projectId;
+  const projectId = /^\d+$/.test(rawProjectId)
+    ? Number(rawProjectId)
+    : null;
+
+  if (projectId === null || !Number.isSafeInteger(projectId) || projectId <= 0) {
+    request.flash('error', 'Select a valid project.');
+    return response.redirect('/dashboard');
+  }
+
+  const userId = request.session.user?.userId;
+
+  try {
+    const removed = await removeVolunteerFromProject(userId, projectId);
+
+    if (!removed) {
+      request.flash('error', 'You are not currently volunteering for this project.');
+      return response.redirect('/dashboard');
+    }
+
+    request.flash('success', 'Your volunteering has been removed.');
+    response.redirect('/dashboard');
+  } catch (error) {
+    console.error(`Unable to remove dashboard volunteering (${safeDatabaseErrorCode(error)}). Verify database availability.`);
+    response.status(503).send('Service data is temporarily unavailable.');
+  }
 };
 
 const showUsersPage = async (_request, response) => {
@@ -185,6 +224,7 @@ const processUserRegistrationForm = async (request, response) => {
 export {
   processLoginForm,
   processLogout,
+  processDashboardVolunteerRemoval,
   processUserRegistrationForm,
   requireLogin,
   requireRole,

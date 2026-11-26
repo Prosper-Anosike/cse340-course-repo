@@ -25,6 +25,8 @@ import {
 import {
 	processNewProjectForm,
 	processEditProjectForm,
+	processVolunteerRemoval,
+	processVolunteerSignup,
 	projectValidation,
 	showEditProjectForm,
 	showNewProjectForm,
@@ -34,6 +36,7 @@ import {
 import {
 	processLoginForm,
 	processLogout,
+	processDashboardVolunteerRemoval,
 	processUserRegistrationForm,
 	requireLogin,
 	requireRole,
@@ -59,6 +62,8 @@ router.post('/new-project', requireLogin, requireRole('admin'), projectValidatio
 router.get('/project/:id', showProjectDetailsPage);
 router.get('/edit-project/:id', requireLogin, requireRole('admin'), showEditProjectForm);
 router.post('/edit-project/:id', requireLogin, requireRole('admin'), projectValidation, processEditProjectForm);
+router.post('/project/:id/volunteer', requireLogin, processVolunteerSignup);
+router.post('/project/:id/unvolunteer', requireLogin, processVolunteerRemoval);
 router.get('/categories', showCategoriesPage);
 router.get('/new-category', requireLogin, requireRole('admin'), showNewCategoryForm);
 router.post('/new-category', requireLogin, requireRole('admin'), categoryValidation, processNewCategoryForm);
@@ -71,6 +76,7 @@ router.get('/login', showLoginForm);
 router.post('/login', processLoginForm);
 router.get('/logout', processLogout);
 router.get('/dashboard', requireLogin, showDashboard);
+router.post('/dashboard/unvolunteer/:projectId', requireLogin, processDashboardVolunteerRemoval);
 router.get('/users', requireLogin, requireRole('admin'), showUsersPage);
 router.get('/assign-categories/:projectId', requireLogin, requireRole('admin'), showAssignCategoriesForm);
 router.post('/assign-categories/:projectId', requireLogin, requireRole('admin'), processAssignCategoriesForm);

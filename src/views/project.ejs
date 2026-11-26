@@ -9,6 +9,18 @@
   <a class="button button-light" href="/edit-project/<%= project.projectId %>">Edit Project</a>
   <a class="button button-light" href="/assign-categories/<%= project.projectId %>">Edit Categories</a>
   <% } %>
+  <% if (isLoggedIn) { %>
+    <% if (isVolunteering) { %>
+  <p><strong>You are volunteering for this project</strong></p>
+  <form action="/project/<%= project.projectId %>/unvolunteer" method="post">
+    <button class="button button-light" type="submit">Remove My Volunteering</button>
+  </form>
+    <% } else { %>
+  <form action="/project/<%= project.projectId %>/volunteer" method="post">
+    <button class="button button-light" type="submit">Volunteer for This Project</button>
+  </form>
+    <% } %>
+  <% } %>
 </section>
 <section class="project-categories content-width" aria-labelledby="project-categories-heading">
   <h2 id="project-categories-heading">Categories</h2>
